@@ -1,4 +1,4 @@
-# BoostPack.cmake v0.2.0
+# BoostPack.cmake v0.2.1
 # Copyright (c) 2026 Catyugu
 # SPDX-License-Identifier: MIT
 #
@@ -20,27 +20,107 @@ set(BOOSTPACK_CACHE_DIR "" CACHE PATH
   "Optional shared directory for downloaded Boost module source archives")
 option(BOOSTPACK_OFFLINE "Use already populated Boost sources without network" OFF)
 
-# Module dependencies are discovered from the CMake project shipped in each
-# selected Boost repository at the requested release tag. Inspecting the
-# upstream target references avoids maintaining a version-specific registry.
-function(_boostpack_dependencies module source_dir out_deps)
+# Fetch sources without auto-configuring the upstream directory.
+function(_boostpack_fetch module version repository template out_source out_binary)
+  set(url "${template}")
+  string(REPLACE "@REPOSITORY@" "${repository}" url "${url}")
+  string(REPLACE "@MODULE@" "${module}" url "${url}")
+  string(REPLACE "@VERSION@" "${version}" url "${url}")
+  string(REPLACE "@TAG@" "boost-${version}" url "${url}")
+  set(content_name "boostpack_${module}")
+  set(download_options "")
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+    list(APPEND download_options DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  endif()
+  set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
+  FetchContent_Declare(${content_name}
+    URL "${url}"
+    SOURCE_SUBDIR "_boostpack_no_auto_configure"
+    ${download_options})
+  message(STATUS "BoostPack: resolving ${module} from Boost ${version}")
+  FetchContent_MakeAvailable(${content_name})
+  FetchContent_GetProperties(${content_name} SOURCE_DIR source_dir BINARY_DIR binary_dir)
+  set(${out_source} "${source_dir}" PARENT_SCOPE)
+  set(${out_binary} "${binary_dir}" PARENT_SCOPE)
+endfunction()
+
+# Fetch version-matched upstream CMake helpers only for modules that require
+# them (boost_install/boost_message), without growing a metadata registry.
+function(_boostpack_needs_support source_dir out_needed)
   file(READ "${source_dir}/CMakeLists.txt" contents)
-  # Exclude commented references (for example, documentation examples).
-  string(REGEX REPLACE "#[^\r\n]*" "" contents "${contents}")
-  string(REGEX MATCHALL "Boost::[A-Za-z][A-Za-z0-9_]*" references "${contents}")
+  if(contents MATCHES "boost_install[ \t\r\n]*\\("
+      OR contents MATCHES "boost_message[ \t\r\n]*\\("
+      OR contents MATCHES "include[ \t\r\n]*\\([ \t]*Boost(Install|Message|Root|Test)")
+    set(${out_needed} TRUE PARENT_SCOPE)
+  else()
+    set(${out_needed} FALSE PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Enumerate configured targets from the upstream module's entire CMake tree.
+function(_boostpack_targets directory out_targets)
+  get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+  get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+  foreach(child IN LISTS children)
+    _boostpack_targets("${child}" nested)
+    list(APPEND targets ${nested})
+  endforeach()
+  set(${out_targets} "${targets}" PARENT_SCOPE)
+endfunction()
+
+# Link properties are evaluated after CMake conditionals, variables, includes
+# and functions. Namespaced dependencies may be defined later, at generation.
+function(_boostpack_dependencies module source_dir out_deps)
+  _boostpack_targets("${source_dir}" targets)
   set(deps "")
-  foreach(reference IN LISTS references)
-    string(SUBSTRING "${reference}" 7 -1 dep)
-    # Boost::<module> is the module's own alias; Boost::<module>_detail etc.
-    # can be extra targets provided by the same upstream repository.
-    if(dep STREQUAL module OR dep MATCHES "^${module}_")
-      continue()
-    endif()
-    list(APPEND deps "${dep}")
+  foreach(target IN LISTS targets)
+    foreach(prop IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+      get_target_property(links "${target}" "${prop}")
+      if(NOT links)
+        continue()
+      endif()
+      string(REGEX REPLACE "\\$<TARGET_NAME_IF_EXISTS:Boost::[A-Za-z][A-Za-z0-9_]*>"
+        "" links "${links}")
+      string(REGEX MATCHALL "Boost::[A-Za-z][A-Za-z0-9_]*" references "${links}")
+      foreach(reference IN LISTS references)
+        string(SUBSTRING "${reference}" 7 -1 dep)
+        # A module's extra exported targets belong to the same repository.
+        if(dep STREQUAL module OR dep MATCHES "^${module}_")
+          continue()
+        endif()
+        list(APPEND deps "${dep}")
+      endforeach()
+    endforeach()
   endforeach()
   list(REMOVE_DUPLICATES deps)
   list(SORT deps)
   set(${out_deps} "${deps}" PARENT_SCOPE)
+endfunction()
+
+function(_boostpack_check_cycles modules)
+  set(pending ${modules})
+  set(ordered "")
+  while(pending)
+    set(progress FALSE)
+    foreach(module IN LISTS pending)
+      get_property(deps GLOBAL PROPERTY "BOOSTPACK_DEPS_${module}")
+      set(ready TRUE)
+      foreach(dep IN LISTS deps)
+        if(NOT dep IN_LIST ordered AND dep IN_LIST pending)
+          set(ready FALSE)
+          break()
+        endif()
+      endforeach()
+      if(ready)
+        list(APPEND ordered "${module}")
+        list(REMOVE_ITEM pending "${module}")
+        set(progress TRUE)
+      endif()
+    endforeach()
+    if(NOT progress)
+      message(FATAL_ERROR "BoostPack: cyclic Boost module dependencies: ${pending}")
+    endif()
+  endwhile()
 endfunction()
 
 function(boostpack_add)
@@ -108,101 +188,68 @@ function(boostpack_add)
     set(FETCHCONTENT_FULLY_DISCONNECTED ON)
   endif()
 
-  # Other CMake projects may use BUILD_TESTING. Only disable it in the local
-  # scope from which upstream Boost add_subdirectory() is called.
+  # Disable upstream tests and installation only in this function scope.
   set(BUILD_TESTING OFF)
+  set(BOOST_SKIP_INSTALL_RULES ON)
   set(BOOST_SUPERPROJECT_VERSION "${BP_VERSION}")
 
-  set(download_options "")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-    list(APPEND download_options DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  get_property(loaded GLOBAL PROPERTY BOOSTPACK_MODULES)
+  get_property(support_dir GLOBAL PROPERTY BOOSTPACK_SUPPORT_SOURCE)
+  if(support_dir)
+    list(PREPEND CMAKE_MODULE_PATH "${support_dir}/include")
   endif()
 
-  # Discovery fetches sources (not built libraries) before registering targets.
-  # This is a fixed-point calculation: newly discovered modules join the queue.
-  get_property(loaded GLOBAL PROPERTY BOOSTPACK_MODULES)
   set(queue ${BP_COMPONENTS})
-  set(required "")
   while(queue)
     list(POP_FRONT queue module)
-    if(module IN_LIST required)
+    if(module IN_LIST loaded)
       continue()
     endif()
+    if(TARGET Boost::${module})
+      message(FATAL_ERROR "BoostPack: Boost::${module} already exists outside BoostPack")
+    endif()
 
-    set(content_name "boostpack_${module}")
-    set(url "${template}")
-    string(REPLACE "@REPOSITORY@" "${repository}" url "${url}")
-    string(REPLACE "@MODULE@" "${module}" url "${url}")
-    string(REPLACE "@VERSION@" "${BP_VERSION}" url "${url}")
-    string(REPLACE "@TAG@" "boost-${BP_VERSION}" url "${url}")
-    FetchContent_Declare(${content_name}
-      URL "${url}"
-      SOURCE_SUBDIR "_boostpack_no_auto_configure"
-      ${download_options}
-    )
-    message(STATUS "BoostPack: resolving ${module} from Boost ${BP_VERSION}")
-    FetchContent_MakeAvailable(${content_name})
-    FetchContent_GetProperties(${content_name} SOURCE_DIR source_dir)
+    _boostpack_fetch("${module}" "${BP_VERSION}" "${repository}" "${template}"
+      source_dir binary_dir)
     if(NOT EXISTS "${source_dir}/CMakeLists.txt")
       message(FATAL_ERROR
         "BoostPack: '${module}' has no CMakeLists.txt at '${source_dir}'. "
         "Verify that Boost ${BP_VERSION} contains the module and that the "
         "mirror/cache is populated (offline=${BOOSTPACK_OFFLINE}).")
     endif()
-    _boostpack_dependencies("${module}" "${source_dir}" deps)
-    set_property(GLOBAL PROPERTY "BOOSTPACK_DEPS_${module}" "${deps}")
-    list(APPEND required "${module}")
-    list(APPEND queue ${deps})
-  endwhile()
 
-  # Dependencies must be available when upstream target_link_libraries() runs.
-  set(pending ${required})
-  set(ordered "")
-  while(pending)
-    set(progress FALSE)
-    foreach(module IN LISTS pending)
-      get_property(deps GLOBAL PROPERTY "BOOSTPACK_DEPS_${module}")
-      set(ready TRUE)
-      foreach(dep IN LISTS deps)
-        if(NOT dep IN_LIST ordered AND NOT dep IN_LIST loaded)
-          set(ready FALSE)
-          break()
+    _boostpack_needs_support("${source_dir}" needs_support)
+    if(needs_support)
+      if(NOT support_dir)
+        _boostpack_fetch("cmake" "${BP_VERSION}" "${repository}" "${template}"
+          support_dir support_binary)
+        if(NOT EXISTS "${support_dir}/include/BoostInstall.cmake")
+          message(FATAL_ERROR
+            "BoostPack: missing upstream CMake support for Boost ${BP_VERSION} "
+            "at '${support_dir}/include/BoostInstall.cmake'")
         endif()
-      endforeach()
-      if(ready)
-        list(APPEND ordered "${module}")
-        list(REMOVE_ITEM pending "${module}")
-        set(progress TRUE)
+        set_property(GLOBAL PROPERTY BOOSTPACK_SUPPORT_SOURCE "${support_dir}")
+        list(PREPEND CMAKE_MODULE_PATH "${support_dir}/include")
       endif()
-    endforeach()
-    if(NOT progress)
-      message(FATAL_ERROR "BoostPack: cyclic Boost module dependencies: ${pending}")
+      include(BoostInstall)
     endif()
-  endwhile()
 
-  foreach(module IN LISTS ordered)
-    if(TARGET Boost::${module} AND NOT module IN_LIST loaded)
-      message(FATAL_ERROR "BoostPack: Boost::${module} already exists outside BoostPack")
-    endif()
-  endforeach()
-
-  foreach(module IN LISTS ordered)
-    if(module IN_LIST loaded)
-      continue()
-    endif()
-    set(content_name "boostpack_${module}")
-    FetchContent_GetProperties(${content_name}
-      SOURCE_DIR source_dir BINARY_DIR binary_dir)
     add_subdirectory("${source_dir}" "${binary_dir}" EXCLUDE_FROM_ALL)
     if(NOT TARGET Boost::${module})
       message(FATAL_ERROR
-        "BoostPack: ${module} did not define Boost::${module} "
+        "BoostPack: '${module}' did not define Boost::${module} "
         "for Boost ${BP_VERSION}; check upstream CMake support")
     endif()
+
+    _boostpack_dependencies("${module}" "${source_dir}" deps)
+    set_property(GLOBAL PROPERTY "BOOSTPACK_DEPS_${module}" "${deps}")
     list(APPEND loaded "${module}")
     set_property(GLOBAL PROPERTY BOOSTPACK_MODULES "${loaded}")
     message(STATUS "BoostPack: added Boost::${module}")
-  endforeach()
+    list(APPEND queue ${deps})
+  endwhile()
+
+  _boostpack_check_cycles("${loaded}")
   set_property(GLOBAL PROPERTY BOOSTPACK_VERSION "${BP_VERSION}")
   set_property(GLOBAL PROPERTY BOOSTPACK_REPOSITORY "${repository}")
   set_property(GLOBAL PROPERTY BOOSTPACK_URL_TEMPLATE "${template}")
