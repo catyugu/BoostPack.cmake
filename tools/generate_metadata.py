@@ -81,6 +81,22 @@ def validate(manifest: dict, roots: list[str]) -> None:
             if dep not in modules or dep == name:
                 raise ValueError(f"Missing or self-referential dependency: {name} -> {dep}")
 
+    # Validate the dependency DAG before CMake attempts target registration.
+    state = {}
+
+    def visit(name: str) -> None:
+        if state.get(name) == 1:
+            raise ValueError(f"Cyclic module dependencies involving {name}")
+        if state.get(name) == 2:
+            return
+        state[name] = 1
+        for dep in modules[name]["dependencies"]:
+            visit(dep)
+        state[name] = 2
+
+    for name in modules:
+        visit(name)
+
     # The generated set must be precisely the closure of requested roots.
     closure = set()
     pending = list(roots)
@@ -187,16 +203,17 @@ def main() -> None:
     mode.add_argument("--check", action="store_true", help="Offline consistency check (default)")
     args = parser.parse_args()
     roots = selected_modules()
+    if args.refresh:
+        upstream = upstream_manifest(roots)
+        MANIFEST.write_text(json.dumps(upstream, indent=2) + "\n", encoding="utf-8")
+        embed(upstream, check=False)
+        print(f"Regenerated {len(upstream['modules'])} Boost {BOOST_VERSION} modules")
+        return
+
     committed = json.loads(MANIFEST.read_text(encoding="utf-8"))
     validate(committed, roots)
-
-    if args.refresh or args.verify_upstream:
+    if args.verify_upstream:
         upstream = upstream_manifest(roots)
-        if args.refresh:
-            MANIFEST.write_text(json.dumps(upstream, indent=2) + "\n", encoding="utf-8")
-            embed(upstream, check=False)
-            print(f"Regenerated {len(upstream['modules'])} Boost {BOOST_VERSION} modules")
-            return
         if upstream != committed:
             expected = json.dumps(upstream, indent=2).splitlines()
             actual = json.dumps(committed, indent=2).splitlines()
