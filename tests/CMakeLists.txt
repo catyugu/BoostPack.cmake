@@ -1,4 +1,4 @@
-foreach(case IN ITEMS minimal full incremental reinclude collision unsupported version_conflict missing_offline invalid_arguments)
+foreach(case IN ITEMS minimal full expanded incremental reinclude collision unsupported version_conflict missing_offline invalid_arguments)
   add_test(NAME configure_${case}
     COMMAND ${CMAKE_COMMAND}
       -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
