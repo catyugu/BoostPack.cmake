@@ -74,11 +74,12 @@ Multiple `boostpack_add()` calls incrementally add new dependencies and never du
 ## How dependency discovery works
 
 1. Each requested module is fetched from its own `boostorg/<module>` repository at the selected Boost release tag (no superproject download).
-2. BoostPack reads the fetched module's `CMakeLists.txt`, extracts referenced `Boost::<dependency>` targets, and recursively fetches their modules until the closure stops growing.
-3. It topologically sorts the discovered dependency graph and loads each module using its **own** `add_subdirectory()` and upstream CMake definition.
-4. The requested `Boost::` targets are immediately available to `target_link_libraries()`.
+2. BoostPack configures each fetched module with its upstream CMake declarations (and loads version-matched `boostorg/cmake` support on demand where required).
+3. It reads the configured targets' real CMake link properties, including targets created in subdirectories, and fetches missing `Boost::` dependencies until the closure is complete.
+4. The requested `Boost::` targets are available immediately for `target_link_libraries()`.
 
-The supported scope is Boost modules whose root CMake build definitions declare dependencies using concrete `Boost::<name>` references; dynamic/generated references or hidden dependencies in included CMake files may require future resolver improvements. BoostPack does not guarantee support for arbitrary source repositories or every historical release/toolchain combination. No per-header or per-file trimming is performed: the complete source archive of each needed module is downloaded.
+
+The supported scope is Boost modules that expose their native CMake targets and link dependencies through CMake target properties. Dependencies that are purely implicit in headers, source files or custom build steps still require explicit support. Configured optional links using `TARGET_NAME_IF_EXISTS` do not trigger downloads. BoostPack does not guarantee support for arbitrary source repositories or every historical release/toolchain combination. No per-header or per-file trimming is performed: the complete source archive of each needed module is downloaded.
 
 Downloaded archives are selected by **release tag**, not commit SHA or independently verified hash. Treat mirror trust and release reproducibility accordingly; strict lockfiles are future work.
 
@@ -90,22 +91,22 @@ Downloaded archives are selected by **release tag**, not commit SHA or independe
 
 ## Tests and CI
 
-The offline unit tests generate fake Boost repositories with varying dependency graphs and validate closure ordering, multiple releases, URL templates and custom mirrors, repeated calls, version/source conflicts, cycles, offline errors, and invalid input. A separate local archive fixture tests real CMake archive downloading without GitHub.
+The offline unit tests generate fake Boost repositories with varying dependency graphs and validate closure discovery across CMake functions, variables, conditions and subdirectories, CMake support loading, multiple releases, URL templates and custom mirrors, repeated calls, version/source conflicts, cycles, offline errors, and invalid input. A separate local archive fixture tests real CMake archive downloading without GitHub.
 
 ```sh
 cmake -S . -B build -DBUILD_TESTING=ON
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-The real integration project verifies compiled and header-only Boost libraries across multiple versions:
+The real integration project verifies compiled and header-only Boost libraries across multiple versions. Enable the extended suite for Asio, Filesystem, Regex, Stacktrace and Thread:
 
 ```sh
-cmake -S tests/integration -B build/integration -DBOOST_VERSION=1.89.0
+cmake -S tests/integration -B build/integration -DBOOST_VERSION=1.89.0 -DBOOSTPACK_INTEGRATION_EXTENDED=ON
 cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
-GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, and a custom GitHub codeload template.
+GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, extended modules, and a custom GitHub codeload template. Ordinary pushes and PRs run CI; releases are published only from version tags matching the source version and reachable from `main`.
 
 ## License
 
