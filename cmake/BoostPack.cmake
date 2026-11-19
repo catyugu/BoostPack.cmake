@@ -12,16 +12,9 @@ endif()
 include_guard(GLOBAL)
 include(FetchContent)
 
-set(BOOSTPACK_REPOSITORY "https://github.com/boostorg" CACHE STRING
-  "Base URL of Boost module repositories (GitHub by default)")
-set(BOOSTPACK_URL_TEMPLATE "" CACHE STRING
-  "Archive URL template with @REPOSITORY@, @MODULE@ and @TAG@ tokens")
-set(BOOSTPACK_CACHE_DIR "" CACHE PATH
-  "Optional shared directory for downloaded Boost module sources")
-option(BOOSTPACK_OFFLINE "Use already populated Boost sources without network" OFF)
-set(BOOSTPACK_LOCKFILE "" CACHE FILEPATH "Optional JSON lockfile path (relative to the project root)")
-set(BOOSTPACK_LOCK_MODE "READ" CACHE STRING "READ a lockfile or WRITE a new lockfile")
-set_property(CACHE BOOSTPACK_LOCK_MODE PROPERTY STRINGS READ WRITE)
+# A single BoostPack option: absent lockfile => generate, present => verify.
+# Cache location and offline operation use native CMake FetchContent settings.
+set(BOOSTPACK_LOCKFILE "" CACHE FILEPATH "Optional JSON lockfile (created when missing)")
 
 # A lockfile pins complete upstream archive bytes, not mutable tag names.
 # JSON is parsed as data (never included as executable CMake code).
@@ -38,10 +31,15 @@ function(_boostpack_lock_initialize version repository template)
   if(BOOSTPACK_LOCKFILE)
     get_filename_component(lockfile "${BOOSTPACK_LOCKFILE}" ABSOLUTE
       BASE_DIR "${CMAKE_SOURCE_DIR}")
-    if(NOT BOOSTPACK_LOCK_MODE MATCHES "^(READ|WRITE)$")
-      message(FATAL_ERROR "BoostPack: BOOSTPACK_LOCK_MODE must be READ or WRITE")
+    if(EXISTS "${lockfile}")
+      set(mode READ)
+    elseif(FETCHCONTENT_FULLY_DISCONNECTED)
+      message(FATAL_ERROR "BoostPack: offline mode requires an existing lockfile: ${lockfile}")
+    else()
+      set(mode WRITE)
     endif()
-    set(mode "${BOOSTPACK_LOCK_MODE}")
+  elseif(FETCHCONTENT_FULLY_DISCONNECTED)
+    message(FATAL_ERROR "BoostPack: offline mode requires BOOSTPACK_LOCKFILE")
   else()
     set(lockfile "")
     set(mode "")
@@ -64,9 +62,6 @@ function(_boostpack_lock_initialize version repository template)
   endif()
 
   if(mode STREQUAL "READ")
-    if(NOT EXISTS "${lockfile}")
-      message(FATAL_ERROR "BoostPack: lockfile not found: ${lockfile} (use BOOSTPACK_LOCK_MODE=WRITE to create it)")
-    endif()
     file(READ "${lockfile}" data)
     string(JSON schema_type ERROR_VARIABLE error TYPE "${data}" schema)
     if(NOT error STREQUAL "NOTFOUND" OR NOT schema_type STREQUAL "NUMBER")
@@ -97,8 +92,8 @@ function(_boostpack_lock_initialize version repository template)
       message(FATAL_ERROR "BoostPack: lockfile 'modules' must be an object")
     endif()
   else()
-    # Recreate the full lock on every configure; multiple boostpack_add()
-    # calls during that configure incrementally fill the same JSON object.
+    # Create a new lock only when none exists, accumulating the complete
+    # module closure across multiple boostpack_add() calls.
     set(data "{}")
     string(JSON data SET "${data}" schema 1)
     foreach(key IN ITEMS boost_version repository url_template)
@@ -149,7 +144,7 @@ function(_boostpack_archive module version url out_archive out_sha)
     message(FATAL_ERROR "BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
   endif()
   if(NOT EXISTS "${archive}")
-    if(BOOSTPACK_OFFLINE)
+    if(FETCHCONTENT_FULLY_DISCONNECTED)
       message(FATAL_ERROR "BoostPack: offline cache is missing the archive for '${module}': ${archive}")
     endif()
     file(DOWNLOAD "${url}" "${archive}.partial"
@@ -220,39 +215,23 @@ function(_boostpack_fetch module version repository template out_source out_bina
   string(REPLACE "@MODULE@" "${module}" url "${url}")
   string(REPLACE "@VERSION@" "${version}" url "${url}")
   string(REPLACE "@TAG@" "boost-${version}" url "${url}")
-  if(NOT url MATCHES "^(https://|file://)")
-    message(FATAL_ERROR "BoostPack: archive URLs must use https:// or file://: ${url}")
-  endif()
-  get_property(lock_mode GLOBAL PROPERTY BOOSTPACK_LOCK_MODE_ACTIVE)
-  if(lock_mode)
-    string(TOUPPER "${module}" upper)
-    if(DEFINED FETCHCONTENT_SOURCE_DIR_BOOSTPACK_${upper}
-        AND NOT "${FETCHCONTENT_SOURCE_DIR_BOOSTPACK_${upper}}" STREQUAL "")
-      message(FATAL_ERROR
-        "BoostPack: source override for '${module}' cannot be verified against a lockfile")
-    endif()
-    _boostpack_archive("${module}" "${version}" "${url}" archive sha)
-    string(SUBSTRING "${sha}" 0 24 short_sha)
-    set(content_name "bp_${module}_${short_sha}")
-    # Store extracted sources in the build tree; only archives are shared.
-    set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
-    set(FETCHCONTENT_FULLY_DISCONNECTED OFF)
-    set(fetch_url "${archive}")
-    set(hash_option URL_HASH "SHA256=${sha}")
-  else()
-    set(content_name "boostpack_${module}")
-    set(fetch_url "${url}")
-    set(hash_option "")
-  endif()
+
+  # Always resolve through cached archive bytes. A local file URL and its
+  # computed hash are passed to FetchContent, including on an unlocked build.
+  _boostpack_archive("${module}" "${version}" "${url}" archive sha)
+  string(SUBSTRING "${sha}" 0 24 short_sha)
+  set(content_name "bp_${module}_${short_sha}")
+  set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
+  # Offline guards are checked before reaching this local extraction step.
+  set(FETCHCONTENT_FULLY_DISCONNECTED OFF)
+  set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
   set(download_options "")
   if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
     list(APPEND download_options DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
   endif()
-  # Do not let user/global FetchContent settings substitute installed packages.
-  set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
   FetchContent_Declare(${content_name}
-    URL "${fetch_url}"
-    ${hash_option}
+    URL "${archive}"
+    URL_HASH "SHA256=${sha}"
     SOURCE_SUBDIR "_boostpack_no_auto_configure"
     ${download_options})
   message(STATUS "BoostPack: resolving ${module} from Boost ${version}")
@@ -365,7 +344,7 @@ function(boostpack_add)
   if(BP_REPOSITORY)
     set(repository "${BP_REPOSITORY}")
   else()
-    set(repository "${BOOSTPACK_REPOSITORY}")
+    set(repository "https://github.com/boostorg")
   endif()
   string(REGEX REPLACE "/+$" "" repository "${repository}")
   if(NOT repository)
@@ -373,8 +352,6 @@ function(boostpack_add)
   endif()
   if(BP_URL_TEMPLATE)
     set(template "${BP_URL_TEMPLATE}")
-  elseif(BOOSTPACK_URL_TEMPLATE)
-    set(template "${BOOSTPACK_URL_TEMPLATE}")
   else()
     set(template "@REPOSITORY@/@MODULE@/archive/refs/tags/@TAG@.tar.gz")
   endif()
@@ -397,16 +374,9 @@ function(boostpack_add)
 
   string(SHA256 repository_hash "${repository}\n${template}")
   string(SUBSTRING "${repository_hash}" 0 12 cache_key)
-  if(BOOSTPACK_CACHE_DIR)
-    get_filename_component(cache_root "${BOOSTPACK_CACHE_DIR}" ABSOLUTE
-      BASE_DIR "${CMAKE_BINARY_DIR}")
-  else()
-    set(cache_root "${CMAKE_BINARY_DIR}/_boostpack")
-  endif()
-  set(FETCHCONTENT_BASE_DIR "${cache_root}/boost-${BP_VERSION}/${cache_key}")
-  if(BOOSTPACK_OFFLINE)
-    set(FETCHCONTENT_FULLY_DISCONNECTED ON)
-  endif()
+  get_filename_component(cache_root "${FETCHCONTENT_BASE_DIR}" ABSOLUTE
+    BASE_DIR "${CMAKE_BINARY_DIR}")
+  set(FETCHCONTENT_BASE_DIR "${cache_root}/boostpack/boost-${BP_VERSION}/${cache_key}")
   _boostpack_lock_initialize("${BP_VERSION}" "${repository}" "${template}")
 
   # Upstream Boost projects should not install into the consumer or enable
@@ -437,7 +407,7 @@ function(boostpack_add)
       message(FATAL_ERROR
         "BoostPack: '${module}' has no CMakeLists.txt at '${source_dir}'. "
         "Verify that Boost ${BP_VERSION} contains the module and that the "
-        "mirror/cache is populated (offline=${BOOSTPACK_OFFLINE}).")
+        "mirror/cache is populated (offline=${FETCHCONTENT_FULLY_DISCONNECTED}).")
     endif()
 
     _boostpack_needs_support("${source_dir}" needs_support)
