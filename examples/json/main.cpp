@@ -11,7 +11,9 @@ int main() {
       R"({"service":"analytics","endpoint":"https://example.org/api/v1"})");
   const auto& object = settings.as_object();
   const auto& text = object.at("endpoint").as_string();
-  const auto endpoint = boost::urls::parse_uri(std::string(text.data(), text.size()));
+  // url_view refers to the input buffer, so keep the string alive.
+  const std::string endpoint_text(text.data(), text.size());
+  const auto endpoint = boost::urls::parse_uri(endpoint_text);
   if (!endpoint || endpoint->host() != "example.org")
     return 1;
 
