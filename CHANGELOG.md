@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-11-20
+
+- Discover Boost dependencies from the actual configured CMake target graph rather than scanning text in only the root `CMakeLists.txt`. Support dependencies created through functions, variables, included files, subdirectories and active platform conditions; ignore optional `TARGET_NAME_IF_EXISTS` links.
+- Load the upstream `boostorg/cmake` support files from the selected release on demand for modules requiring `boost_install` or related helpers; preserve the single-file consumer API.
+- Add offline regression coverage for configured dependency discovery and upstream support, and extend real Boost integration to Asio, Filesystem, Regex, Stacktrace and Thread.
+- Separate CI from release publication: only `v*` tag builds publish, after full test validation and tag/version/`main` ancestry checks.
+
+
 ## 0.2.0 - 2026-11-20 (corrected release)
 
 - Replace the fixed Boost 1.92.0 / 53-module dependency registry with **runtime module discovery**: fetch the requested release/module sources and recursively resolve dependencies from upstream CMake target declarations.

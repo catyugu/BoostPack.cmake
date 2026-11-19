@@ -6,11 +6,14 @@ set(BOOSTPACK_OFFLINE ON)
 
 # Simulate Boost repositories with real CMake target dependencies. The consumer
 # has no registry, and the test data intentionally changes between cases.
-set(fake_modules config bar headers foo pfr other)
+set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support missing_target)
 foreach(module IN LISTS fake_modules)
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/source/${module}")
   file(MAKE_DIRECTORY "${dir}")
-  set(definition "add_library(boost_${module} INTERFACE)\nadd_library(Boost::${module} ALIAS boost_${module})\n")
+  set(definition "add_library(boost_${module} INTERFACE)\n")
+  if(NOT module STREQUAL "missing_target")
+    string(APPEND definition "add_library(Boost::${module} ALIAS boost_${module})\n")
+  endif()
   if(module STREQUAL "foo")
     string(APPEND definition
       "# The commented Boost::ghost must not be fetched\n"
@@ -23,11 +26,51 @@ foreach(module IN LISTS fake_modules)
     else()
       string(APPEND definition "target_link_libraries(boost_bar INTERFACE Boost::config)\n")
     endif()
+  elseif(module STREQUAL "includes")
+    file(WRITE "${dir}/deps.cmake" "target_link_libraries(boost_includes INTERFACE Boost::bar)\n")
+    string(APPEND definition "include(\"\${CMAKE_CURRENT_LIST_DIR}/deps.cmake\")\n")
+  elseif(module STREQUAL "condition")
+    string(APPEND definition
+      "if(TEST_CASE STREQUAL conditional)\n"
+      "  target_link_libraries(boost_condition INTERFACE Boost::bar)\n"
+      "else()\n"
+      "  target_link_libraries(boost_condition INTERFACE Boost::ghost)\n"
+      "endif()\n")
+  elseif(module STREQUAL "dynamic")
+    string(APPEND definition
+      "set(dependency bar)\n"
+      "target_link_libraries(boost_dynamic INTERFACE Boost::\${dependency})\n")
+  elseif(module STREQUAL "nested")
+    file(MAKE_DIRECTORY "${dir}/impl")
+    file(WRITE "${dir}/impl/CMakeLists.txt"
+      "add_library(boost_nested_impl INTERFACE)\ntarget_link_libraries(boost_nested_impl INTERFACE Boost::bar)\n")
+    string(APPEND definition
+      "add_subdirectory(impl)\ntarget_link_libraries(boost_nested INTERFACE boost_nested_impl)\n")
+  elseif(module STREQUAL "optional")
+    string(APPEND definition
+      "target_link_libraries(boost_optional INTERFACE \"$<TARGET_NAME_IF_EXISTS:Boost::ghost>\" Boost::bar)\n")
+  elseif(module STREQUAL "support")
+    string(APPEND definition
+      "target_link_libraries(boost_support INTERFACE Boost::config)\n"
+      "boost_install(TARGETS boost_support VERSION ${BOOST_SUPERPROJECT_VERSION})\n")
   endif()
   file(WRITE "${dir}/CMakeLists.txt" "${definition}")
   string(TOUPPER "${module}" upper)
   set(FETCHCONTENT_SOURCE_DIR_BOOSTPACK_${upper} "${dir}")
 endforeach()
+
+# Offline substitute for the version-matched boostorg/cmake archive.
+set(support_dir "${CMAKE_CURRENT_BINARY_DIR}/source/cmake")
+file(MAKE_DIRECTORY "${support_dir}/include")
+file(WRITE "${support_dir}/include/BoostInstall.cmake" [=[
+function(boost_install)
+  if(NOT BOOST_SKIP_INSTALL_RULES)
+    message(FATAL_ERROR "BoostPack must disable upstream install rules")
+  endif()
+  set_property(GLOBAL APPEND PROPERTY BOOSTPACK_TEST_SUPPORT_CALLED yes)
+endfunction()
+]=])
+set(FETCHCONTENT_SOURCE_DIR_BOOSTPACK_CMAKE "${support_dir}")
 
 if(TEST_CASE STREQUAL "minimal")
   boostpack_add(VERSION 1.85.0 COMPONENTS pfr)
@@ -65,6 +108,37 @@ elseif(TEST_CASE STREQUAL "template")
     REPOSITORY https://mirror.invalid/boost
     URL_TEMPLATE "@REPOSITORY@/@MODULE@/source/@TAG@.tgz"
     COMPONENTS foo)
+elseif(TEST_CASE STREQUAL "conditional")
+  boostpack_add(VERSION 1.92.0 COMPONENTS condition)
+  if(TARGET Boost::ghost OR NOT TARGET Boost::bar)
+    message(FATAL_ERROR "Inactive branch must not contribute a dependency")
+  endif()
+elseif(TEST_CASE STREQUAL "included")
+  boostpack_add(VERSION 1.92.0 COMPONENTS includes)
+  if(NOT TARGET Boost::bar)
+    message(FATAL_ERROR "Include-based dependency was not discovered")
+  endif()
+elseif(TEST_CASE STREQUAL "dynamic")
+  boostpack_add(VERSION 1.92.0 COMPONENTS dynamic)
+  if(NOT TARGET Boost::bar)
+    message(FATAL_ERROR "Variable-based dependency was not discovered")
+  endif()
+elseif(TEST_CASE STREQUAL "nested")
+  boostpack_add(VERSION 1.92.0 COMPONENTS nested)
+  if(NOT TARGET Boost::bar)
+    message(FATAL_ERROR "Nested target dependency was not discovered")
+  endif()
+elseif(TEST_CASE STREQUAL "optional")
+  boostpack_add(VERSION 1.92.0 COMPONENTS optional)
+  if(TARGET Boost::ghost OR NOT TARGET Boost::bar)
+    message(FATAL_ERROR "Optional dependency incorrectly fetched")
+  endif()
+elseif(TEST_CASE STREQUAL "support")
+  boostpack_add(VERSION 1.92.0 COMPONENTS support)
+  get_property(calls GLOBAL PROPERTY BOOSTPACK_TEST_SUPPORT_CALLED)
+  if(NOT calls STREQUAL yes OR NOT TARGET Boost::config)
+    message(FATAL_ERROR "Upstream support was not initialized")
+  endif()
 elseif(TEST_CASE STREQUAL "collision")
   add_library(foreign_bar INTERFACE)
   add_library(Boost::bar ALIAS foreign_bar)
@@ -85,6 +159,8 @@ elseif(TEST_CASE STREQUAL "cycle")
 elseif(TEST_CASE STREQUAL "missing_offline")
   unset(FETCHCONTENT_SOURCE_DIR_BOOSTPACK_FOO)
   boostpack_add(VERSION 1.92.0 COMPONENTS foo)
+elseif(TEST_CASE STREQUAL "missing_target")
+  boostpack_add(VERSION 1.92.0 COMPONENTS missing_target)
 elseif(TEST_CASE STREQUAL "bad_module")
   boostpack_add(VERSION 1.92.0 COMPONENTS ../evil)
 elseif(TEST_CASE STREQUAL "bad_version")
