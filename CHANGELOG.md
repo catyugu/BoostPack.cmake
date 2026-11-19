@@ -4,7 +4,7 @@
 
 - Add optional JSON lockfiles that pin each requested or transitive Boost module's archive URL and SHA256, including the upstream CMake support archive when needed.
 - Implement explicit WRITE (regenerate at end of configuration) and READ (verify exact Boost version, endpoint, archive checksum, and complete dependency closure) modes.
-- Require a lockfile in READ mode for strict offline builds. Reuse only cached archives and fail on missing, modified, or incorrectly sourced artifacts rather than performing a hidden network fetch.
+- With a lockfile in READ mode, enforce verified offline builds while retaining v0.2.1's unlocked offline cache behavior. Reuse only cached archives and fail on missing, modified, or incorrectly sourced artifacts rather than performing a hidden network fetch.
 - Restrict archive URLs to HTTPS or local file URLs; use TLS verification, atomic cached downloads and file locks; keep archive caches separated by version and source endpoint.
 - Add end-to-end synthetic archive corruption/offline tests and a real Boost locked/offline CI job on CMake 3.22; preserve the single-file consumer interface.
 
