@@ -60,7 +60,7 @@ boostpack_add(
 | `BOOSTPACK_REPOSITORY` | `https://github.com/boostorg` | Default repository/mirror base |
 | `BOOSTPACK_URL_TEMPLATE` | empty | Override archive URL layout; uses placeholders listed above |
 | `BOOSTPACK_CACHE_DIR` | empty | Reusable downloaded source cache (otherwise build-local) |
-| `BOOSTPACK_OFFLINE` | `OFF` | Strict offline mode: require locked, verified cached archives; never download |
+| `BOOSTPACK_OFFLINE` | `OFF` | Prevent network downloads; with a READ lockfile require verified cached archives |
 | `BOOSTPACK_LOCKFILE` | empty | JSON lockfile path (relative to the top-level project directory) |
 | `BOOSTPACK_LOCK_MODE` | `READ` | `READ` a committed lockfile or `WRITE` one explicitly |
 
@@ -82,7 +82,7 @@ cmake -S . -B offline -DBOOSTPACK_CACHE_DIR=/path/to/cache \
 
 The lockfile is JSON (schema 1) and records the Boost version, exact repository and archive URL template, and the complete resolved archive closure. Each module (including optional upstream `boostorg/cmake` support when required) is pinned by its exact URL and **SHA256 of the downloaded archive**. A changed URL, missing module, different hash, or different dependency closure causes configuration to fail in `READ` mode. `WRITE` mode reconstructs the lockfile after CMake finishes configuring, including across multiple `boostpack_add()` calls.
 
-In strict offline mode, **a lockfile in `READ` mode is required**. Every requested archive must already be present in `BOOSTPACK_CACHE_DIR` (or the build-local cache) and pass checksum verification. No network fallback occurs. Remote download URLs must use HTTPS; local archive mirrors may use `file://`. Downloaded archives are cached by Boost version and source endpoint, while verified archive extraction occurs in the build tree. The `FetchContent` source override `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` is available only when lockfiles are disabled, since an arbitrary source directory cannot be verified against a pinned archive hash.
+With `BOOSTPACK_OFFLINE=ON` and a lockfile in `READ` mode, every requested archive must already be present in `BOOSTPACK_CACHE_DIR` (or the build-local cache) and pass checksum verification. No network fallback occurs. Without a lockfile, `BOOSTPACK_OFFLINE=ON` preserves the existing v0.2.1 behavior of reusing already-populated `FetchContent` source directories, without cryptographic verification. Remote download URLs must use HTTPS; local archive mirrors may use `file://`. Downloaded archives are cached by Boost version and source endpoint, while verified archive extraction occurs in the build tree. The `FetchContent` source override `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` is available only when lockfiles are disabled, since an arbitrary source directory cannot be verified against a pinned archive hash.
 
 Archive verification does not attest to local edits made **after extraction** into a build directory. Use a clean build tree when evaluating source integrity.
 
