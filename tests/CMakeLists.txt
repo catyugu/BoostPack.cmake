@@ -30,6 +30,19 @@ if(UNIX)
       -DBOOSTPACK_LOCK_MODE=READ)
   set_tests_properties(archive_mirror_offline_reconfigure
     PROPERTIES DEPENDS archive_mirror_fetch)
+
+  add_test(NAME archive_mirror_unlocked_fetch
+    COMMAND "${CMAKE_COMMAND}"
+      -S "${CMAKE_CURRENT_SOURCE_DIR}/archive"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/archive-unlocked"
+      -DBOOSTPACK_OFFLINE=OFF)
+  add_test(NAME archive_mirror_unlocked_offline
+    COMMAND "${CMAKE_COMMAND}"
+      -S "${CMAKE_CURRENT_SOURCE_DIR}/archive"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/archive-unlocked"
+      -DBOOSTPACK_OFFLINE=ON)
+  set_tests_properties(archive_mirror_unlocked_offline
+    PROPERTIES DEPENDS archive_mirror_unlocked_fetch)
 endif()
 
 add_test(NAME reproducible_lockfile
