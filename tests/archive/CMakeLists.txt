@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
 project(BoostPackArchiveMirror LANGUAGES CXX)
 
+# A host FetchContent dependency intentionally uses the former BoostPack name.
+# BoostPack must neither inspect nor mutate these unrelated native settings.
+include(FetchContent)
+set(FETCHCONTENT_BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}/foreign-fetch-cache")
+set(FETCHCONTENT_FULLY_DISCONNECTED ON)
+FetchContent_Declare(boostpack_foo URL "https://invalid.example/not-used.tar.gz")
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 set(archive_dir "${CMAKE_CURRENT_BINARY_DIR}/archive")
 set(staging "${CMAKE_CURRENT_BINARY_DIR}/staging")
@@ -26,4 +32,13 @@ boostpack_add(VERSION 1.91.0
   COMPONENTS foo)
 if(NOT TARGET Boost::bar OR NOT TARGET Boost::foo)
   message(FATAL_ERROR "Mirrored source was not downloaded or resolved")
+endif()
+# Both systems must retain ownership of their own cache and offline behavior.
+if(NOT FETCHCONTENT_BASE_DIR STREQUAL "${CMAKE_CURRENT_BINARY_DIR}/foreign-fetch-cache"
+    OR NOT FETCHCONTENT_FULLY_DISCONNECTED)
+  message(FATAL_ERROR "BoostPack modified host FetchContent settings")
+endif()
+FetchContent_GetProperties(boostpack_foo)
+if(boostpack_foo_POPULATED)
+  message(FATAL_ERROR "BoostPack populated an unrelated FetchContent declaration")
 endif()
