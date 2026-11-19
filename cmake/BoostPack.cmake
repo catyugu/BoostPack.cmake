@@ -10,7 +10,6 @@ if(CMAKE_VERSION VERSION_LESS 3.22)
 endif()
 
 include_guard(GLOBAL)
-include(FetchContent)
 
 # BoostPack owns its cache and offline controls; no FetchContent global state.
 set(BOOSTPACK_CACHE_DIR "" CACHE PATH "Optional shared Boost archive cache")
@@ -222,6 +221,8 @@ function(_boostpack_fetch module version repository template out_source out_bina
   # Isolated extraction: no FetchContent declarations, cache variables,
   # disconnected flags, target redirects, or global FetchContent state.
   set(extract_dir "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
+  get_filename_component(extract_parent "${extract_dir}" DIRECTORY)
+  file(MAKE_DIRECTORY "${extract_parent}")
   file(LOCK "${extract_dir}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
   if(NOT lock_result STREQUAL "0")
     message(FATAL_ERROR "BoostPack: cannot lock extraction for '${module}': ${lock_result}")
