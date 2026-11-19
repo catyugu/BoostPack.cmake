@@ -1,0 +1,447 @@
+{
+  "boost_version": "1.92.0",
+  "modules": {
+    "align": {
+      "sha": "440281d63d1c0b7c7fde63ded67b4860b57d5756",
+      "dependencies": [
+        "assert",
+        "config",
+        "core"
+      ]
+    },
+    "any": {
+      "sha": "3312581e774129462e06bbdc752b919dca37e85c",
+      "dependencies": [
+        "config",
+        "throw_exception",
+        "type_index"
+      ]
+    },
+    "array": {
+      "sha": "3df3aafd1924084d46988590bd94cf4c1b362859",
+      "dependencies": [
+        "assert",
+        "config",
+        "throw_exception"
+      ]
+    },
+    "assert": {
+      "sha": "fc2a476cc7d9f42b65ec104e90d24bfd6290efdc",
+      "dependencies": [
+        "config"
+      ]
+    },
+    "bind": {
+      "sha": "8cc29fc19db49e791743c821821e201b46ab9c66",
+      "dependencies": [
+        "config",
+        "core"
+      ]
+    },
+    "bloom": {
+      "sha": "0909b9955e2dc02a0356351a2dfb567d4d5af772",
+      "dependencies": [
+        "assert",
+        "config",
+        "container_hash",
+        "core",
+        "throw_exception",
+        "type_traits"
+      ]
+    },
+    "callable_traits": {
+      "sha": "2a56a3a2496cdb66496f844db55085dd992d5e49",
+      "dependencies": []
+    },
+    "charconv": {
+      "sha": "4475d6550fafc6dca45b333dccaf45d96d1cb196",
+      "dependencies": [
+        "assert",
+        "config",
+        "core"
+      ]
+    },
+    "circular_buffer": {
+      "sha": "5d8bebb7614157768d49372618ebbe3049375820",
+      "dependencies": [
+        "assert",
+        "concept_check",
+        "config",
+        "core",
+        "move",
+        "throw_exception",
+        "type_traits"
+      ]
+    },
+    "compat": {
+      "sha": "349fb928b5ef800d1b8544cb4c382c39ecde0b3c",
+      "dependencies": [
+        "assert",
+        "config",
+        "throw_exception"
+      ]
+    },
+    "concept_check": {
+      "sha": "235e54ebf23be678045e0eeae90f47ca0e2c95ce",
+      "dependencies": [
+        "config",
+        "preprocessor",
+        "type_traits"
+      ]
+    },
+    "config": {
+      "sha": "115e718e0fd72329e69fc776dac99811385d6f77",
+      "dependencies": []
+    },
+    "container": {
+      "sha": "f74270de43714edccf17b33eca454348d47402b7",
+      "dependencies": [
+        "assert",
+        "config",
+        "intrusive",
+        "move"
+      ]
+    },
+    "container_hash": {
+      "sha": "2698b43803c012601e6bb1a6116e83767b97986c",
+      "dependencies": [
+        "config",
+        "describe",
+        "mp11"
+      ]
+    },
+    "core": {
+      "sha": "a90a31934fe8bcb6e6be6dfea77b80492c7b6c81",
+      "dependencies": [
+        "assert",
+        "config",
+        "throw_exception"
+      ]
+    },
+    "crc": {
+      "sha": "d547322aa734b37901fa79e7b5e71040d698ce69",
+      "dependencies": []
+    },
+    "describe": {
+      "sha": "5e7b4b84c8d105093687b940a45ac22df47b1ab4",
+      "dependencies": [
+        "mp11"
+      ]
+    },
+    "dynamic_bitset": {
+      "sha": "b2c17416ea930e8b6b8eb6f891970a3fd29bd134",
+      "dependencies": [
+        "assert",
+        "config",
+        "container_hash",
+        "core",
+        "throw_exception"
+      ]
+    },
+    "endian": {
+      "sha": "4bffdf3defc2836409e72622066a40d8396088ae",
+      "dependencies": [
+        "config"
+      ]
+    },
+    "exception": {
+      "sha": "afcb28d8f2517eda7b6b2cba1cd8b6dc3bbaf0d9",
+      "dependencies": [
+        "assert",
+        "config",
+        "core",
+        "smart_ptr",
+        "throw_exception",
+        "tuple",
+        "type_traits"
+      ]
+    },
+    "function": {
+      "sha": "18650af5175ea247aebc60ff12db1b477123d5dc",
+      "dependencies": [
+        "assert",
+        "bind",
+        "config",
+        "core",
+        "throw_exception"
+      ]
+    },
+    "headers": {
+      "sha": "95930ca8f5d144fe345a2ad7a2a7728b8c3e5cd5",
+      "dependencies": []
+    },
+    "integer": {
+      "sha": "e513075061f125c631a420e8960e0c606bd4b810",
+      "dependencies": [
+        "assert",
+        "config",
+        "core",
+        "throw_exception",
+        "type_traits"
+      ]
+    },
+    "intrusive": {
+      "sha": "b089da5af88981d6e87392680b0b68fd30be0b12",
+      "dependencies": [
+        "assert",
+        "config",
+        "move"
+      ]
+    },
+    "io": {
+      "sha": "342e4c6d10d586058818daa84201a2d301357a53",
+      "dependencies": [
+        "config"
+      ]
+    },
+    "json": {
+      "sha": "c57359dff379f278d7d5f8fa332d3dea684ba5fa",
+      "dependencies": [
+        "assert",
+        "config",
+        "container",
+        "container_hash",
+        "core",
+        "describe",
+        "endian",
+        "mp11",
+        "system",
+        "throw_exception"
+      ]
+    },
+    "lambda2": {
+      "sha": "dda22ab8ee70bc67d89841ce9365d6913620ceda",
+      "dependencies": []
+    },
+    "lexical_cast": {
+      "sha": "35d8af6ce21fa7a163b68a2fb27437d3fb737232",
+      "dependencies": [
+        "config",
+        "container",
+        "core",
+        "throw_exception"
+      ]
+    },
+    "logic": {
+      "sha": "9b8703a2d6623405323b892f1d126a6b17ca1651",
+      "dependencies": [
+        "config",
+        "core"
+      ]
+    },
+    "move": {
+      "sha": "b1ecb39a75ed2de17c23c46a005ac79f59a528ca",
+      "dependencies": [
+        "config"
+      ]
+    },
+    "mp11": {
+      "sha": "c3eba6ac6be2e21af33a1b2ec97634cd01bcc447",
+      "dependencies": []
+    },
+    "multi_index": {
+      "sha": "b6a0722f11cd96bf5f12809efe9ae6b46fe0b5b6",
+      "dependencies": [
+        "assert",
+        "bind",
+        "config",
+        "container_hash",
+        "core",
+        "integer",
+        "mp11",
+        "preprocessor",
+        "smart_ptr",
+        "throw_exception",
+        "tuple",
+        "type_traits",
+        "utility"
+      ]
+    },
+    "optional": {
+      "sha": "c0648f5f2d7b7d8e59c6e2c1d203f34c7aec129e",
+      "dependencies": [
+        "assert",
+        "config",
+        "core",
+        "throw_exception",
+        "type_traits"
+      ]
+    },
+    "outcome": {
+      "sha": "8580f7690fae0f99e408c32faf50a51949a08043",
+      "dependencies": [
+        "config",
+        "exception",
+        "headers",
+        "system",
+        "throw_exception"
+      ]
+    },
+    "pfr": {
+      "sha": "401385c240027423acbb1eb6dea2abe0043db5aa",
+      "dependencies": []
+    },
+    "pool": {
+      "sha": "740c8076f9d02f0216e8f3dbb15d2fd80f67d7f4",
+      "dependencies": [
+        "assert",
+        "config",
+        "integer",
+        "throw_exception",
+        "type_traits",
+        "winapi"
+      ]
+    },
+    "predef": {
+      "sha": "e1211a4ca467bb6512e99025772ca25afa8d6159",
+      "dependencies": []
+    },
+    "preprocessor": {
+      "sha": "cd1b1bd03900b68505822cfa25cb16851bd6caf1",
+      "dependencies": []
+    },
+    "rational": {
+      "sha": "421b19c3eaa3fc8019b435faeb02666ad929493b",
+      "dependencies": [
+        "assert",
+        "config",
+        "core",
+        "integer",
+        "throw_exception",
+        "type_traits",
+        "utility"
+      ]
+    },
+    "scope": {
+      "sha": "c979d5e11b43cc36d5d5b8883e5b8a243478794f",
+      "dependencies": [
+        "config",
+        "core",
+        "type_traits"
+      ]
+    },
+    "smart_ptr": {
+      "sha": "6e945160d788b8efdfc49ba4af1f8797cacd7c97",
+      "dependencies": [
+        "assert",
+        "config",
+        "core",
+        "throw_exception"
+      ]
+    },
+    "static_string": {
+      "sha": "2ff9d3535e853f4913e85e7fea28f84b04ea5d81",
+      "dependencies": [
+        "assert",
+        "container_hash",
+        "core",
+        "headers",
+        "throw_exception",
+        "utility"
+      ]
+    },
+    "system": {
+      "sha": "bc7c00fa67501ceadfde8e920835502340e8b899",
+      "dependencies": [
+        "assert",
+        "compat",
+        "config",
+        "throw_exception",
+        "variant2",
+        "winapi"
+      ]
+    },
+    "throw_exception": {
+      "sha": "0924b53b40d1da33301f94fb97518f5a7df31e9b",
+      "dependencies": [
+        "assert",
+        "config"
+      ]
+    },
+    "tuple": {
+      "sha": "704830d883825357a83e49a2aed2a07e734a74bb",
+      "dependencies": [
+        "config",
+        "core",
+        "type_traits"
+      ]
+    },
+    "type_index": {
+      "sha": "af648a10037497055d6f0823e22cf7e394e38458",
+      "dependencies": [
+        "config",
+        "container_hash",
+        "throw_exception"
+      ]
+    },
+    "type_traits": {
+      "sha": "e6275ccf01c9cf8775ef0cb6188bd58f3b167a0f",
+      "dependencies": [
+        "config"
+      ]
+    },
+    "unordered": {
+      "sha": "636164f1357cf217374313820a457c31b50fcfc7",
+      "dependencies": [
+        "assert",
+        "config",
+        "container_hash",
+        "core",
+        "mp11",
+        "predef",
+        "throw_exception"
+      ]
+    },
+    "url": {
+      "sha": "a34f3a4a1a0e695f679453af71dfc050a59170e6",
+      "dependencies": [
+        "align",
+        "assert",
+        "config",
+        "core",
+        "headers",
+        "mp11",
+        "optional",
+        "system",
+        "throw_exception",
+        "type_traits",
+        "variant2"
+      ]
+    },
+    "utility": {
+      "sha": "8679ac0f1f769fa8d705a1d2329afb5fb6a1eaf2",
+      "dependencies": [
+        "config",
+        "core",
+        "io",
+        "preprocessor",
+        "throw_exception",
+        "type_traits"
+      ]
+    },
+    "uuid": {
+      "sha": "9c5f195bcdb5d85a857831e22bd182589c3374d0",
+      "dependencies": [
+        "assert",
+        "config",
+        "throw_exception",
+        "type_traits"
+      ]
+    },
+    "variant2": {
+      "sha": "dde1a3ac91d6986bae27b7f740689804d56cff61",
+      "dependencies": [
+        "assert",
+        "config",
+        "mp11"
+      ]
+    },
+    "winapi": {
+      "sha": "094612ee33a8dce960cd075537266fdb4788d059",
+      "dependencies": [
+        "config",
+        "predef"
+      ]
+    }
+  }
+}

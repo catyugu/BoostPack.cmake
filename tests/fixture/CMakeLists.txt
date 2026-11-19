@@ -4,15 +4,14 @@ project(BoostPackFixture LANGUAGES CXX)
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 set(BOOSTPACK_OFFLINE ON)
 
-# Provide a synthetic, header-only module for every entry in the registry.
-# FetchContent's SOURCE_DIR override exercises the real dependency graph and
-# CMake target wiring without accessing a network or installing Boost.
-set(modules
-  assert charconv config container container_hash core describe dynamic_bitset
-  endian intrusive io move mp11 pfr predef preprocessor scope static_string
-  throw_exception type_traits unordered utility uuid
-)
-foreach(module IN LISTS modules)
+# Synthetic module targets model the complete generated registry without a network.
+file(READ "${CMAKE_CURRENT_LIST_DIR}/../../tools/boost-1.92.0.json" registry)
+string(JSON module_count LENGTH "${registry}" modules)
+math(EXPR last_module "${module_count} - 1")
+set(modules "")
+foreach(i RANGE 0 ${last_module})
+  string(JSON module MEMBER "${registry}" modules ${i})
+  list(APPEND modules "${module}")
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/fakes/${module}")
   file(MAKE_DIRECTORY "${dir}")
   file(WRITE "${dir}/CMakeLists.txt"
@@ -31,15 +30,20 @@ if(TEST_CASE STREQUAL "minimal")
     message(FATAL_ERROR "Minimal dependency set is wrong: ${loaded}")
   endif()
 elseif(TEST_CASE STREQUAL "full")
-  boostpack_add(VERSION 1.92.0 COMPONENTS
-    unordered container pfr mp11 describe endian scope container_hash charconv
-    intrusive dynamic_bitset static_string uuid)
+  boostpack_add(VERSION 1.92.0 COMPONENTS ${modules})
   get_property(loaded GLOBAL PROPERTY BOOSTPACK_MODULES)
   list(LENGTH loaded count)
-  if(NOT count EQUAL 23)
-    message(FATAL_ERROR "Expected 23 modules, got ${count}: ${loaded}")
+  if(NOT count EQUAL module_count)
+    message(FATAL_ERROR "Expected ${module_count} modules, got ${count}: ${loaded}")
   endif()
   foreach(module IN LISTS modules)
+    if(NOT TARGET Boost::${module})
+      message(FATAL_ERROR "Missing Boost::${module}")
+    endif()
+  endforeach()
+elseif(TEST_CASE STREQUAL "expanded")
+  boostpack_add(VERSION 1.92.0 COMPONENTS json url multi_index)
+  foreach(module IN ITEMS json url multi_index system container_hash)
     if(NOT TARGET Boost::${module})
       message(FATAL_ERROR "Missing Boost::${module}")
     endif()
