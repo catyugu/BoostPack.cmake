@@ -2,7 +2,7 @@
 
 Keep the consumer contract: a single `BoostPack.cmake` file, CMake 3.22+, no extra consumer tools, module-level downloads, optional mirrors, and upstream Boost targets.
 
-The resolver must work from module source files, without a baked-in version or module list. A lockfile must cover the exact configured archive closure and pin each archive's URL and SHA256. Changes to dependency discovery should come with synthetic CMake regression tests covering version independence, configured target graphs (including dynamic references, conditions and nested directories), dependency closure, and error paths.
+The resolver must work from module source files, without a baked-in version or module list. A lockfile must cover the exact configured archive closure and pin each archive's URL and SHA256. Keep the BoostPack API small: `BOOSTPACK_CACHE_DIR`, `BOOSTPACK_OFFLINE` and `BOOSTPACK_LOCKFILE` are the only global configuration options. Do not modify, consult, or otherwise interfere with the host project's FetchContent configuration or declarations; BoostPack manages downloads and extraction independently. Changes to dependency discovery should come with synthetic CMake regression tests covering version independence, configured target graphs (including dynamic references, conditions and nested directories), dependency closure, and error paths.
 
 Run offline tests locally:
 
