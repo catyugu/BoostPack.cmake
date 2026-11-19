@@ -79,12 +79,24 @@ jobs:
           key: boostpack-dynamic-${{ matrix.version }}-${{ runner.os }}-source
       - name: Configure real Boost modules
         shell: bash
-        run: >-
-          cmake -S tests/integration -B build/integration
-          -DBOOST_VERSION=${{ matrix.version }}
-          -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache"
-          -DBUILD_SHARED_LIBS=${{ matrix.shared }}
-          ${{ matrix.compiler == 'clang' && '-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang' || '' }}
+        run: |
+          args=()
+          if [[ "${{ matrix.compiler }}" == "clang" ]]; then
+            args+=(-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang)
+          fi
+          for attempt in 1 2 3; do
+            if cmake -S tests/integration -B build/integration \
+              -DBOOST_VERSION=${{ matrix.version }} \
+              -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache" \
+              -DBUILD_SHARED_LIBS=${{ matrix.shared }} "${args[@]}"; then
+              exit 0
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            echo "Boost archive fetch failed; retrying configuration ($attempt/3)"
+            sleep 8
+          done
       - name: Build
         run: cmake --build build/integration --config Release --parallel 2
       - name: Test
