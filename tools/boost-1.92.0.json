@@ -166,6 +166,10 @@
         "throw_exception"
       ]
     },
+    "headers": {
+      "sha": "95930ca8f5d144fe345a2ad7a2a7728b8c3e5cd5",
+      "dependencies": []
+    },
     "integer": {
       "sha": "e513075061f125c631a420e8960e0c606bd4b810",
       "dependencies": [
@@ -268,6 +272,7 @@
       "dependencies": [
         "config",
         "exception",
+        "headers",
         "system",
         "throw_exception"
       ]
@@ -330,6 +335,7 @@
         "assert",
         "container_hash",
         "core",
+        "headers",
         "throw_exception",
         "utility"
       ]
@@ -393,6 +399,7 @@
         "assert",
         "config",
         "core",
+        "headers",
         "mp11",
         "optional",
         "system",

@@ -24,9 +24,9 @@ Configure and build normally: `cmake -S . -B build`, then `cmake --build build`.
 
 ## Supported modules (v0.2.0)
 
-The **52 supported Boost 1.92.0 modules**, including commonly used transitive dependencies, are:
+The **53 supported Boost 1.92.0 modules**, including commonly used transitive dependencies, are:
 
-`align`, `any`, `array`, `assert`, `bind`, `bloom`, `callable_traits`, `charconv`, `circular_buffer`, `compat`, `concept_check`, `config`, `container`, `container_hash`, `core`, `crc`, `describe`, `dynamic_bitset`, `endian`, `exception`, `function`, `integer`, `intrusive`, `io`, `json`, `lambda2`, `lexical_cast`, `logic`, `move`, `mp11`, `multi_index`, `optional`, `outcome`, `pfr`, `pool`, `predef`, `preprocessor`, `rational`, `scope`, `smart_ptr`, `static_string`, `system`, `throw_exception`, `tuple`, `type_index`, `type_traits`, `unordered`, `url`, `utility`, `uuid`, `variant2`, `winapi`.
+`align`, `any`, `array`, `assert`, `bind`, `bloom`, `callable_traits`, `charconv`, `circular_buffer`, `compat`, `concept_check`, `config`, `container`, `container_hash`, `core`, `crc`, `describe`, `dynamic_bitset`, `endian`, `exception`, `function`, `headers`, `integer`, `intrusive`, `io`, `json`, `lambda2`, `lexical_cast`, `logic`, `move`, `mp11`, `multi_index`, `optional`, `outcome`, `pfr`, `pool`, `predef`, `preprocessor`, `rational`, `scope`, `smart_ptr`, `static_string`, `system`, `throw_exception`, `tuple`, `type_index`, `type_traits`, `unordered`, `url`, `utility`, `uuid`, `variant2`, `winapi`.
 
 Only selected modules and their full dependency closure are downloaded. Libraries with compiled sources (for example, `json`, `url`, `charconv`, or `container` in its default mode) use their original CMake build definitions. Module revisions are pinned to the exact commits in the Boost 1.92.0 release superproject, **not floating branches**. Other Boost versions or unlisted modules fail before downloading.
 

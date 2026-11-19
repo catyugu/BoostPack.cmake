@@ -2,7 +2,7 @@
 
 ## 0.2.0 - 2026-11-20
 
-- Expand Boost 1.92.0 module coverage from 23 to 52, including JSON, URL, MultiIndex, Bloom, and Outcome.
+- Expand Boost 1.92.0 module coverage from 23 to 53, including JSON, URL, MultiIndex, Bloom, and Outcome.
 - Introduce upstream-derived, automatically generated metadata: release-pinned submodule revisions and CMake dependency declarations, embedded in the single-file consumer module.
 - Add offline generator regression tests and CI comparison with the upstream release.
 - Strengthen real Boost integration tests: CMake 3.22.6, GCC, Clang, AppleClang, MSVC, and static/shared libraries.
