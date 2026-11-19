@@ -2,10 +2,11 @@ cmake_minimum_required(VERSION 3.22)
 project(BoostPackFixture LANGUAGES CXX)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
-set(BOOSTPACK_OFFLINE ON)
+set(BOOSTPACK_OFFLINE OFF)
 
-# Simulate Boost repositories with real CMake target dependencies. The consumer
-# has no registry, and the test data intentionally changes between cases.
+# Real CMake targets are configured before their Boost:: dependencies exist.
+# Verify that discovery follows the configured graph, including nested files,
+# variable expansion, platform conditions and optional target expressions.
 set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support missing_target)
 foreach(module IN LISTS fake_modules)
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/source/${module}")
@@ -42,24 +43,21 @@ foreach(module IN LISTS fake_modules)
       "target_link_libraries(boost_dynamic INTERFACE Boost::\${dependency})\n")
   elseif(module STREQUAL "nested")
     file(MAKE_DIRECTORY "${dir}/impl")
-    file(WRITE "${dir}/impl/CMakeLists.txt"
-      "add_library(boost_nested_impl INTERFACE)\ntarget_link_libraries(boost_nested_impl INTERFACE Boost::bar)\n")
-    string(APPEND definition
-      "add_subdirectory(impl)\ntarget_link_libraries(boost_nested INTERFACE boost_nested_impl)\n")
+    file(WRITE "${dir}/impl/CMakeLists.txt" "add_library(boost_nested_impl INTERFACE)\ntarget_link_libraries(boost_nested_impl INTERFACE Boost::bar)\n")
+    string(APPEND definition "add_subdirectory(impl)\ntarget_link_libraries(boost_nested INTERFACE boost_nested_impl)\n")
   elseif(module STREQUAL "optional")
-    string(APPEND definition
-      "target_link_libraries(boost_optional INTERFACE \"$<TARGET_NAME_IF_EXISTS:Boost::ghost>\" Boost::bar)\n")
+    string(APPEND definition "target_link_libraries(boost_optional INTERFACE \"$<TARGET_NAME_IF_EXISTS:Boost::ghost>\" Boost::bar)\n")
   elseif(module STREQUAL "support")
     string(APPEND definition
       "target_link_libraries(boost_support INTERFACE Boost::config)\n"
-      "boost_install(TARGETS boost_support VERSION ${BOOST_SUPERPROJECT_VERSION})\n")
+      "boost_install(TARGETS boost_support VERSION \${BOOST_SUPERPROJECT_VERSION})\n")
   endif()
   file(WRITE "${dir}/CMakeLists.txt" "${definition}")
   string(TOUPPER "${module}" upper)
   set(FETCHCONTENT_SOURCE_DIR_BOOSTPACK_${upper} "${dir}")
 endforeach()
 
-# Offline substitute for the version-matched boostorg/cmake archive.
+# Pretend the version-matched boostorg/cmake archive is available locally.
 set(support_dir "${CMAKE_CURRENT_BINARY_DIR}/source/cmake")
 file(MAKE_DIRECTORY "${support_dir}/include")
 file(WRITE "${support_dir}/include/BoostInstall.cmake" [=[
@@ -157,6 +155,7 @@ elseif(TEST_CASE STREQUAL "template_conflict")
 elseif(TEST_CASE STREQUAL "cycle")
   boostpack_add(VERSION 1.92.0 COMPONENTS foo)
 elseif(TEST_CASE STREQUAL "missing_offline")
+  set(BOOSTPACK_OFFLINE ON)
   unset(FETCHCONTENT_SOURCE_DIR_BOOSTPACK_FOO)
   boostpack_add(VERSION 1.92.0 COMPONENTS foo)
 elseif(TEST_CASE STREQUAL "missing_target")

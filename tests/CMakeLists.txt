@@ -17,12 +17,23 @@ if(UNIX)
   add_test(NAME archive_mirror_fetch
     COMMAND "${CMAKE_COMMAND}"
       -S "${CMAKE_CURRENT_SOURCE_DIR}/archive"
-      -B "${CMAKE_CURRENT_BINARY_DIR}/archive")
+      -B "${CMAKE_CURRENT_BINARY_DIR}/archive"
+      -DBOOSTPACK_LOCKFILE=${CMAKE_CURRENT_BINARY_DIR}/archive/boostpack.lock.json
+      -DBOOSTPACK_LOCK_MODE=WRITE
+      -DBOOSTPACK_OFFLINE=OFF)
   add_test(NAME archive_mirror_offline_reconfigure
     COMMAND "${CMAKE_COMMAND}"
       -S "${CMAKE_CURRENT_SOURCE_DIR}/archive"
       -B "${CMAKE_CURRENT_BINARY_DIR}/archive"
-      -DBOOSTPACK_OFFLINE=ON)
+      -DBOOSTPACK_OFFLINE=ON
+      -DBOOSTPACK_LOCKFILE=${CMAKE_CURRENT_BINARY_DIR}/archive/boostpack.lock.json
+      -DBOOSTPACK_LOCK_MODE=READ)
   set_tests_properties(archive_mirror_offline_reconfigure
     PROPERTIES DEPENDS archive_mirror_fetch)
 endif()
+
+add_test(NAME reproducible_lockfile
+  COMMAND "${CMAKE_COMMAND}"
+    -DREPOSITORY_SOURCE=${CMAKE_SOURCE_DIR}
+    -DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/lock
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/lock/run.cmake")
