@@ -1,33 +1,22 @@
 # Contributing
 
-Preserve the consumer contract: one CMake file, CMake 3.22+, no consumer-side dependency tools, minimal module downloads, and original Boost CMake targets.
+Keep the consumer contract: a single `BoostPack.cmake` file, CMake 3.22+, no extra consumer tools, module-level downloads, optional mirrors, and upstream Boost targets.
 
-## Add or update supported Boost modules
+The resolver must work from module source files, without a baked-in version or module list. Changes to dependency discovery should come with synthetic CMake regression tests covering version independence, dependency closure, dynamic references, and error paths.
 
-The only manually maintained module selection is [tools/modules.txt](tools/modules.txt). The generator uses the Boost 1.92.0 superproject Git tree and the pinned upstream libraries' CMake files.
+Run offline tests locally:
 
-~~~sh
-python tools/generate_metadata.py --refresh
-python tools/generate_metadata.py --check
-python tools/generate_metadata.py --verify-upstream
-python tools/test_metadata.py
-~~~
-
-Commit the generated `tools/boost-1.92.0.json` and `cmake/BoostPack.cmake` together. Python is a **maintainer and CI tool only**, not a consumer dependency.
-
-## Tests
-
-~~~sh
+```sh
 cmake -S . -B build -DBUILD_TESTING=ON
 ctest --test-dir build -C Debug --output-on-failure
-cmake -S tests/integration -B build/integration
+```
+
+For substantive integration changes, also test real Boost sources:
+
+```sh
+cmake -S tests/integration -B build/integration -DBOOST_VERSION=1.92.0
 cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
-cmake -S examples/json -B build/json
-cmake --build build/json --config Release
-ctest --test-dir build/json -C Release --output-on-failure
-~~~
+```
 
-For dependency resolution changes, add an offline CMake regression test. For compiled libraries or unusual build requirements, add a real Boost integration test.
-
-CI publishes a new tagged release from `main` only after metadata verification, configuration, and compiled-library integration pass. The version recorded in both the core module and top-level CMake project must match.
+The CI matrix covers multiple Boost releases, CMake 3.22, Windows, Linux, macOS, CMake archive mirrors, and static/shared compiled libraries. Releases are published only after the main branch CI succeeds.

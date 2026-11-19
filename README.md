@@ -2,90 +2,111 @@
 
 [![CI](https://github.com/catyugu/BoostPack.cmake/actions/workflows/ci.yml/badge.svg)](https://github.com/catyugu/BoostPack.cmake/actions/workflows/ci.yml)
 
-**Choose Boost modules through one CMake file.** BoostPack fetches only requested Boost repositories and their transitive dependencies, then uses the original upstream CMake targets. Consumers need **CMake 3.22+ and a C++ compiler**, but no installed Boost, Boost.Build, Boostdep, BCP, Python, or package manager.
+**Choose any Boost release and modules from one CMake file.** BoostPack retrieves just the chosen upstream Boost repositories and their transitive dependencies **on demand**, reads each downloaded module's upstream CMake target declarations, and registers the original `Boost::<module>` targets. No precomputed module registry, supported-version whitelist, Boost installation, Boost.Build, Boostdep, BCP, Python, or package manager is required by consumers.
+
+Requirements: CMake **3.22+**, a C++ compiler, and network access on first use (or a populated source cache). Upstream modules may have additional toolchain requirements.
 
 ## Quick start
 
-Copy [BoostPack.cmake](cmake/BoostPack.cmake) into your project, or download the single-file [v0.2.0 release](https://github.com/catyugu/BoostPack.cmake/releases/tag/v0.2.0).
+Copy [`cmake/BoostPack.cmake`](cmake/BoostPack.cmake) into your project, or get the standalone file from the release.
 
-~~~cmake
+```cmake
 cmake_minimum_required(VERSION 3.22)
 project(example LANGUAGES CXX)
 
 include(cmake/BoostPack.cmake)
-boostpack_add(VERSION 1.92.0 COMPONENTS unordered container pfr mp11)
+boostpack_add(
+    VERSION 1.92.0
+    COMPONENTS unordered container pfr mp11
+)
 
 add_executable(example main.cpp)
 target_link_libraries(example PRIVATE
-  Boost::unordered Boost::container Boost::pfr Boost::mp11)
-~~~
+    Boost::unordered Boost::container Boost::pfr Boost::mp11)
+```
 
-Configure and build normally: `cmake -S . -B build`, then `cmake --build build`. See the complete [minimal](examples/minimal) and [JSON + URL](examples/json) consumer examples.
+Run `cmake -S . -B build` and `cmake --build build`. Version `1.92.0` above is only an example; you can select **any published Boost release version** for which the requested module repositories include the release tag and an upstream `CMakeLists.txt`. Unsupported versions/modules produce fetch or CMake errors rather than using stale metadata.
 
-## Supported modules (v0.2.0)
+### Specify a mirror or private repository
 
-The **53 supported Boost 1.92.0 modules**, including commonly used transitive dependencies, are:
+By default, BoostPack downloads archives from `https://github.com/boostorg/<module>/archive/refs/tags/boost-<version>.tar.gz`.
 
-`align`, `any`, `array`, `assert`, `bind`, `bloom`, `callable_traits`, `charconv`, `circular_buffer`, `compat`, `concept_check`, `config`, `container`, `container_hash`, `core`, `crc`, `describe`, `dynamic_bitset`, `endian`, `exception`, `function`, `headers`, `integer`, `intrusive`, `io`, `json`, `lambda2`, `lexical_cast`, `logic`, `move`, `mp11`, `multi_index`, `optional`, `outcome`, `pfr`, `pool`, `predef`, `preprocessor`, `rational`, `scope`, `smart_ptr`, `static_string`, `system`, `throw_exception`, `tuple`, `type_index`, `type_traits`, `unordered`, `url`, `utility`, `uuid`, `variant2`, `winapi`.
+If the alternative host follows the same archive path convention, override the repository base URL:
 
-Only selected modules and their full dependency closure are downloaded. Libraries with compiled sources (for example, `json`, `url`, `charconv`, or `container` in its default mode) use their original CMake build definitions. Module revisions are pinned to the exact commits in the Boost 1.92.0 release superproject, **not floating branches**. Other Boost versions or unlisted modules fail before downloading.
+```cmake
+boostpack_add(
+    VERSION 1.89.0
+    COMPONENTS json url
+    REPOSITORY https://your-mirror.example/boostorg
+)
+```
 
-## Options and local sources
+For hosts with different archive layouts, supply an URL template. The placeholders are `@REPOSITORY@`, `@MODULE@`, `@VERSION@`, and `@TAG@` (`boost-<version>`):
 
-| CMake variable | Default | Meaning |
+```cmake
+boostpack_add(
+    VERSION 1.92.0
+    COMPONENTS pfr mp11
+    URL_TEMPLATE "https://codeload.github.com/boostorg/@MODULE@/tar.gz/refs/tags/@TAG@"
+)
+```
+
+`REPOSITORY` and `URL_TEMPLATE` are also configurable as project-wide cache options, `BOOSTPACK_REPOSITORY` and `BOOSTPACK_URL_TEMPLATE`. A given CMake configure may only use a single Boost release and source endpoint to prevent mixed-source target graphs.
+
+### Cache, offline builds, local sources
+
+| CMake setting | Default | Behavior |
 | --- | --- | --- |
-| `BOOSTPACK_CACHE_DIR` | empty | Reusable FetchContent source cache; otherwise build-local |
-| `BOOSTPACK_OFFLINE` | `OFF` | Use already populated sources only; no network |
+| `BOOSTPACK_REPOSITORY` | `https://github.com/boostorg` | Default repository/mirror base |
+| `BOOSTPACK_URL_TEMPLATE` | empty | Override archive URL layout; uses placeholders listed above |
+| `BOOSTPACK_CACHE_DIR` | empty | Reusable downloaded source cache (otherwise build-local) |
+| `BOOSTPACK_OFFLINE` | `OFF` | Do not fetch anything; require existing cached sources |
 
-~~~sh
+```sh
 cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/cache
-cmake -S . -B build -DBOOSTPACK_OFFLINE=ON -DBOOSTPACK_CACHE_DIR=/path/to/cache
-~~~
+cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/cache -DBOOSTPACK_OFFLINE=ON
+```
 
-For vendored individual modules, use `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` (for example, `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_JSON`). The directory must contain the upstream `CMakeLists.txt`.
+The cache is isolated by Boost version and repository/template identity. The `FetchContent` source override `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` (for example `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_PFR`) also works for local or vendored upstream modules.
 
-Repeated `boostpack_add()` calls add only newly required dependencies. Boost version mixing or BoostPack-managed targets colliding with existing targets are rejected. Upstream Boost tests are disabled during module configuration, preserving the parent project's test settings.
+Multiple `boostpack_add()` calls incrementally add new dependencies and never duplicate targets. BoostPack temporarily sets `BUILD_TESTING=OFF` only while adding upstream Boost projects, leaving the parent's testing configuration untouched.
 
-This is **module-level** selection; it does not prune individual source files or headers. BoostPack's own CMake code is MIT licensed; downloaded Boost modules retain their original licenses (typically BSL-1.0).
+## How dependency discovery works
 
-## Maintainer workflow: regenerate pinned metadata
+1. Each requested module is fetched from its own `boostorg/<module>` repository at the selected Boost release tag (no superproject download).
+2. BoostPack reads the fetched module's `CMakeLists.txt`, extracts referenced `Boost::<dependency>` targets, and recursively fetches their modules until the closure stops growing.
+3. It topologically sorts the discovered dependency graph and loads each module using its **own** `add_subdirectory()` and upstream CMake definition.
+4. The requested `Boost::` targets are immediately available to `target_link_libraries()`.
 
-**Consumers never need Python.** For repository maintenance, a standard-library-only Python tool derives dependencies from the selected release's upstream module `CMakeLists.txt` and revisions from the tagged Boost superproject submodule tree.
+The supported scope is Boost modules whose root CMake build definitions declare dependencies using concrete `Boost::<name>` references; dynamic/generated references or hidden dependencies in included CMake files may require future resolver improvements. BoostPack does not guarantee support for arbitrary source repositories or every historical release/toolchain combination. No per-header or per-file trimming is performed: the complete source archive of each needed module is downloaded.
 
-The manually maintained supported-module selection is [tools/modules.txt](tools/modules.txt); its pinned manifest is [tools/boost-1.92.0.json](tools/boost-1.92.0.json).
+Downloaded archives are selected by **release tag**, not commit SHA or independently verified hash. Treat mirror trust and release reproducibility accordingly; strict lockfiles are future work.
 
-~~~sh
-python tools/generate_metadata.py --refresh          # update JSON and embedded CMake
-python tools/generate_metadata.py --check            # offline consistency verification
-python tools/generate_metadata.py --verify-upstream  # validate against tagged Boost sources
-python tools/test_metadata.py                       # generator unit tests
-~~~
+## Examples
 
-`--refresh` and `--verify-upstream` require network access; `--check` and generator unit tests are offline. To add modules, edit `tools/modules.txt`, run `--refresh`, and commit the manifest and CMake changes. CI independently checks generated data against the upstream Boost release.
+- [`examples/minimal`](examples/minimal) — a basic PFR single-module project.
+- [`examples/json`](examples/json) — compiled JSON + URL libraries and their transitive dependencies.
+- [`examples/custom-version`](examples/custom-version) — configurable Boost release and mirror using lightweight PFR + Mp11; pass `-DBOOST_VERSION=1.89.0 -DBOOST_MIRROR=...`.
 
-## Testing
+## Tests and CI
 
-Synthetic-module tests cover the complete supported dependency graph, incremental loading, offline failures, duplicate includes, target collisions, unsupported modules, and invalid versions/arguments:
+The offline unit tests generate fake Boost repositories with varying dependency graphs and validate closure ordering, multiple releases, URL templates and custom mirrors, repeated calls, version/source conflicts, cycles, offline errors, and invalid input. A separate local archive fixture tests real CMake archive downloading without GitHub.
 
-~~~sh
+```sh
 cmake -S . -B build -DBUILD_TESTING=ON
 ctest --test-dir build -C Debug --output-on-failure
-~~~
+```
 
-Real Boost integration includes both header-only and compiled libraries (including JSON, URL, and MultiIndex):
+The real integration project verifies compiled and header-only Boost libraries across multiple versions:
 
-~~~sh
-cmake -S tests/integration -B build/integration
+```sh
+cmake -S tests/integration -B build/integration -DBOOST_VERSION=1.89.0
 cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
-~~~
+```
 
-CI tests Linux (GCC, Clang, static/shared modes, and CMake 3.22.6), macOS (AppleClang), Windows (MSVC), and builds and runs the [JSON/URL example](examples/json) with CMake 3.22.6. On successful `main` CI, a versioned GitHub Release attaches the standalone `BoostPack.cmake`.
-
-## Scope
-
-Further Boost versions/modules, source vendoring, per-file trimming, install/export rules, and independent archive SHA256 verification are future work.
+GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, and a custom GitHub codeload template.
 
 ## License
 
-BoostPack uses the [MIT License](LICENSE). Boost modules retain their own upstream licenses, normally [Boost Software License 1.0](https://www.boost.org/LICENSE_1_0.txt).
+BoostPack itself is [MIT licensed](LICENSE). Each fetched Boost module remains subject to its own upstream license (usually Boost Software License 1.0).

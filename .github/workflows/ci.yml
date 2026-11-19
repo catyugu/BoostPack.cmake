@@ -11,22 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  metadata:
-    name: Metadata generation and upstream verification
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Test metadata generator
-        run: python tools/test_metadata.py
-      - name: Verify committed manifest matches embedded CMake
-        run: python tools/generate_metadata.py --check
-      - name: Compare manifest against pinned Boost upstream CMake
-        run: python tools/generate_metadata.py --verify-upstream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   unit:
-    name: Configure / ${{ matrix.os }} / CMake ${{ matrix.cmake }}
+    name: Unit / ${{ matrix.os }} / CMake ${{ matrix.cmake }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -42,7 +28,7 @@ jobs:
             cmake: system
     steps:
       - uses: actions/checkout@v4
-      - name: Install minimum CMake
+      - name: Install CMake 3.22
         if: matrix.cmake != 'system'
         run: python -m pip install --upgrade cmake==${{ matrix.cmake }}
       - name: Configure
@@ -51,7 +37,7 @@ jobs:
         run: ctest --test-dir build -C Debug --output-on-failure
 
   integration:
-    name: Real Boost / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }}
+    name: Boost ${{ matrix.version }} / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -60,60 +46,96 @@ jobs:
           - os: ubuntu-latest
             cmake: '3.22.6'
             compiler: gcc
+            version: '1.89.0'
             shared: 'OFF'
           - os: ubuntu-latest
             cmake: system
             compiler: clang
+            version: '1.92.0'
             shared: 'OFF'
           - os: ubuntu-latest
             cmake: system
             compiler: gcc
+            version: '1.92.0'
             shared: 'ON'
           - os: windows-latest
             cmake: system
             compiler: msvc
+            version: '1.92.0'
             shared: 'OFF'
           - os: macos-latest
             cmake: system
             compiler: appleclang
+            version: '1.92.0'
             shared: 'OFF'
     steps:
       - uses: actions/checkout@v4
-      - name: Install minimum CMake
+      - name: Install CMake 3.22
         if: matrix.cmake != 'system'
         run: python -m pip install --upgrade cmake==${{ matrix.cmake }}
       - uses: actions/cache@v4
         with:
           path: .boostpack-cache
-          key: boostpack-1.92.0-v02-${{ runner.os }}-sources
-      - name: Configure real Boost sources
+          key: boostpack-dynamic-${{ matrix.version }}-${{ runner.os }}-source
+      - name: Configure real Boost modules
         shell: bash
-        run: >-
-          cmake -S tests/integration -B build/integration
-          -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache"
-          -DBUILD_SHARED_LIBS=${{ matrix.shared }}
-          ${{ matrix.compiler == 'clang' && '-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang' || '' }}
+        run: |
+          args=()
+          if [[ "${{ matrix.compiler }}" == "clang" ]]; then
+            args+=(-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang)
+          fi
+          for attempt in 1 2 3; do
+            if cmake -S tests/integration -B build/integration \
+              -DBOOST_VERSION=${{ matrix.version }} \
+              -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache" \
+              -DBUILD_SHARED_LIBS=${{ matrix.shared }} "${args[@]}"; then
+              exit 0
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              exit 1
+            fi
+            echo "Boost archive fetch failed; retrying configuration ($attempt/3)"
+            sleep 8
+          done
       - name: Build
         run: cmake --build build/integration --config Release --parallel 2
       - name: Test
         run: ctest --test-dir build/integration -C Release --output-on-failure
-      - name: Configure JSON example with CMake 3.22
+      - name: Configure custom-version example
         if: matrix.cmake == '3.22.6'
         shell: bash
         run: >-
-          cmake -S examples/json -B build/example-json
+          cmake -S examples/custom-version -B build/example-version
+          -DBOOST_VERSION=${{ matrix.version }}
           -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache"
-      - name: Build JSON example
+      - name: Build custom-version example
         if: matrix.cmake == '3.22.6'
-        run: cmake --build build/example-json --config Release --parallel 2
-      - name: Test JSON example
+        run: cmake --build build/example-version --config Release --parallel 2
+      - name: Test custom-version example
         if: matrix.cmake == '3.22.6'
-        run: ctest --test-dir build/example-json -C Release --output-on-failure
+        run: ctest --test-dir build/example-version -C Release --output-on-failure
+
+  mirror:
+    name: Custom archive URL / CMake 3.22 / Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CMake 3.22
+        run: python -m pip install --upgrade cmake==3.22.6
+      - name: Configure via codeload URL template
+        run: >-
+          cmake -S examples/custom-version -B build/mirror
+          -DBOOST_VERSION=1.92.0
+          -DBOOSTPACK_URL_TEMPLATE=https://codeload.github.com/boostorg/@MODULE@/tar.gz/refs/tags/@TAG@
+      - name: Build
+        run: cmake --build build/mirror --parallel 2
+      - name: Test
+        run: ctest --test-dir build/mirror --output-on-failure
 
   release:
-    name: Publish versioned single-file release
+    name: Publish corrected v0.2.0 single-file release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [metadata, unit, integration]
+    needs: [unit, integration, mirror]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -121,7 +143,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Create release only when version is new
+      - name: Publish after successful CI
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -132,13 +154,18 @@ jobs:
           test -n "$version" && test "$version" = "$project_version"
           tag="v${version}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists"
-            exit 0
-          fi
-          git fetch --tags
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            if test "$(git rev-parse "$tag^{commit}")" != "$GITHUB_SHA"; then
-              echo "Tag $tag already points to another commit" >&2
+            published=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha')
+            if test "$published" = "$GITHUB_SHA"; then
+              echo "Release $tag already corresponds to this commit"
+              exit 0
+            fi
+            # The earlier v0.2.0 was released before dynamic resolution was
+            # implemented. Replace exactly that known legacy revision once.
+            if test "$tag" = "v0.2.0" && \
+               test "$published" = "d194384143c152ab5c988ce3fa6e8e031488bc28"; then
+              gh release delete "$tag" --yes --cleanup-tag
+            else
+              echo "Refusing to replace an unrelated existing release $tag" >&2
               exit 1
             fi
           fi
