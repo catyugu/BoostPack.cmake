@@ -51,41 +51,37 @@ boostpack_add(
 )
 ```
 
-`REPOSITORY` and `URL_TEMPLATE` are also configurable as project-wide cache options, `BOOSTPACK_REPOSITORY` and `BOOSTPACK_URL_TEMPLATE`. A given CMake configure may only use a single Boost release and source endpoint to prevent mixed-source target graphs.
+The source endpoint can be selected using the `REPOSITORY` and `URL_TEMPLATE` arguments of `boostpack_add()`. Both default to the official Boost GitHub repositories. A CMake configure may only use one Boost release and source endpoint; conflicting calls are rejected.
 
-### Cache, offline builds, local sources
+### Cache, offline builds and reproducibility
 
-| CMake setting | Default | Behavior |
+BoostPack exposes just three optional cache variables. Downloading and extracting Boost sources is entirely owned by BoostPack: it does **not** change or consult the host project's `FetchContent` settings or declarations.
+
+| BoostPack setting | Default | Behavior |
 | --- | --- | --- |
-| `BOOSTPACK_REPOSITORY` | `https://github.com/boostorg` | Default repository/mirror base |
-| `BOOSTPACK_URL_TEMPLATE` | empty | Override archive URL layout; uses placeholders listed above |
-| `BOOSTPACK_CACHE_DIR` | empty | Reusable downloaded source cache (otherwise build-local) |
-| `BOOSTPACK_OFFLINE` | `OFF` | Prevent network downloads; with a READ lockfile require verified cached archives |
-| `BOOSTPACK_LOCKFILE` | empty | JSON lockfile path (relative to the top-level project directory) |
-| `BOOSTPACK_LOCK_MODE` | `READ` | `READ` a committed lockfile or `WRITE` one explicitly |
+| `BOOSTPACK_CACHE_DIR` | Build-local | Optional reusable archive cache (separated by Boost version and source endpoint) |
+| `BOOSTPACK_OFFLINE` | `OFF` | Never access the network; use cached archives only |
+| `BOOSTPACK_LOCKFILE` | Empty | Optional JSON lockfile (relative to the top-level source directory) |
 
-Normal builds still work without a lockfile. For reproducible builds, generate one explicitly, commit it, and use `READ` mode thereafter:
+Lockfile behavior is automatic. When `BOOSTPACK_LOCKFILE` is set and the file does not exist, BoostPack resolves the complete dependency closure and **creates** the file. When it exists, BoostPack **verifies** every source URL and archive SHA256 as well as the Boost version and complete closure; any mismatch fails configuration. To intentionally regenerate a lockfile, delete it and configure again. No separate READ/WRITE mode is needed.
 
 ```sh
-# Generate a lock (network permitted on first configure).
-cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/cache \
-  -DBOOSTPACK_LOCKFILE=boostpack.lock.json -DBOOSTPACK_LOCK_MODE=WRITE
+# First configure: download Boost sources and generate a lockfile.
+cmake -S . -B build -DBOOSTPACK_LOCKFILE=boostpack.lock.json
 
-# Consume the committed lock; every archive is SHA256-verified.
-cmake -S . -B build -DBOOSTPACK_LOCK_MODE=READ
+# Subsequent configure: verify the existing lockfile.
+cmake -S . -B build
 
-# Configure without any network access using a prepopulated archive cache.
-cmake -S . -B offline -DBOOSTPACK_CACHE_DIR=/path/to/cache \
-  -DBOOSTPACK_LOCKFILE=boostpack.lock.json -DBOOSTPACK_LOCK_MODE=READ \
-  -DBOOSTPACK_OFFLINE=ON
+# Strictly offline, using the existing lockfile and a populated shared cache.
+cmake -S . -B offline -DBOOSTPACK_LOCKFILE=boostpack.lock.json \
+  -DBOOSTPACK_CACHE_DIR=/path/to/cache -DBOOSTPACK_OFFLINE=ON
 ```
 
-The lockfile is JSON (schema 1) and records the Boost version, exact repository and archive URL template, and the complete resolved archive closure. Each module (including optional upstream `boostorg/cmake` support when required) is pinned by its exact URL and **SHA256 of the downloaded archive**. A changed URL, missing module, different hash, or different dependency closure causes configuration to fail in `READ` mode. `WRITE` mode reconstructs the lockfile after CMake finishes configuring, including across multiple `boostpack_add()` calls.
+The first and third commands must use the same `BOOSTPACK_CACHE_DIR` if they use different build directories. Without a lockfile, offline mode still requires previously cached archives, but no source hashes are pinned across machines. When `BOOSTPACK_LOCKFILE` is set but missing, offline mode fails rather than generating an incomplete lockfile.
 
-With `BOOSTPACK_OFFLINE=ON` and a lockfile in `READ` mode, every requested archive must already be present in `BOOSTPACK_CACHE_DIR` (or the build-local cache) and pass checksum verification. No network fallback occurs. Without a lockfile, `BOOSTPACK_OFFLINE=ON` preserves the existing v0.2.1 behavior of reusing already-populated `FetchContent` source directories, without cryptographic verification. Remote download URLs must use HTTPS; local archive mirrors may use `file://`. Downloaded archives are cached by Boost version and source endpoint, while verified archive extraction occurs in the build tree. The `FetchContent` source override `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` is available only when lockfiles are disabled, since an arbitrary source directory cannot be verified against a pinned archive hash.
+The lockfile is a JSON document (schema 1) that pins the Boost version, source endpoint, and every resolved archive's URL and SHA256, including version-matched upstream `boostorg/cmake` support when necessary. `BOOSTPACK_LOCKFILE` may be committed to version control for reproducible dependency sources. Lockfile verification covers downloaded archive bytes, not user modifications to files **after extraction**; use a clean build directory when checking source integrity.
 
-Archive verification does not attest to local edits made **after extraction** into a build directory. Use a clean build tree when evaluating source integrity.
-
+Only HTTPS remote URLs and local `file://` archive mirrors are accepted. Downloads use TLS verification, per-archive file locks, and atomic cache updates. Extracted sources and binary directories are isolated in the consumer build tree; shared cache contents are limited to archives.
 
 Multiple `boostpack_add()` calls incrementally add new dependencies and never duplicate targets. BoostPack temporarily sets `BUILD_TESTING=OFF` only while adding upstream Boost projects, leaving the parent's testing configuration untouched.
 
@@ -99,7 +95,7 @@ Multiple `boostpack_add()` calls incrementally add new dependencies and never du
 
 The supported scope is Boost modules that expose their native CMake targets and link dependencies through CMake target properties. Dependencies that are purely implicit in headers, source files or custom build steps still require explicit support. Configured optional links using `TARGET_NAME_IF_EXISTS` do not trigger downloads. BoostPack does not guarantee support for arbitrary source repositories or every historical release/toolchain combination. No per-header or per-file trimming is performed: the complete source archive of each needed module is downloaded.
 
-Without a lockfile, Boost source archives are selected by release tag only; release tags may be mutable. With a lockfile, the exact archive bytes, source URL, and complete module closure are verified. Lockfiles must be regenerated explicitly to accept source changes.
+Without a lockfile, Boost sources are selected by upstream release tags, which may be mutable. With a lockfile, archive bytes, URLs and the complete module closure are verified. Delete the lockfile to regenerate it explicitly.
 
 ## Examples
 
