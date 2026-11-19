@@ -12,8 +12,9 @@ endif()
 include_guard(GLOBAL)
 include(FetchContent)
 
-# A single BoostPack option: absent lockfile => generate, present => verify.
-# Cache location and offline operation use native CMake FetchContent settings.
+# BoostPack owns its cache and offline controls; no FetchContent global state.
+set(BOOSTPACK_CACHE_DIR "" CACHE PATH "Optional shared Boost archive cache")
+option(BOOSTPACK_OFFLINE "Use cached Boost archives only (no network)" OFF)
 set(BOOSTPACK_LOCKFILE "" CACHE FILEPATH "Optional JSON lockfile (created when missing)")
 
 # A lockfile pins complete upstream archive bytes, not mutable tag names.
@@ -33,13 +34,12 @@ function(_boostpack_lock_initialize version repository template)
       BASE_DIR "${CMAKE_SOURCE_DIR}")
     if(EXISTS "${lockfile}")
       set(mode READ)
-    elseif(FETCHCONTENT_FULLY_DISCONNECTED)
-      message(FATAL_ERROR "BoostPack: offline mode requires an existing lockfile: ${lockfile}")
     else()
+      if(BOOSTPACK_OFFLINE)
+        message(FATAL_ERROR "BoostPack: cannot create lockfile while offline: ${lockfile}")
+      endif()
       set(mode WRITE)
     endif()
-  elseif(FETCHCONTENT_FULLY_DISCONNECTED)
-    message(FATAL_ERROR "BoostPack: offline mode requires BOOSTPACK_LOCKFILE")
   else()
     set(lockfile "")
     set(mode "")
@@ -136,7 +136,7 @@ function(_boostpack_archive module version url out_archive out_sha)
 
   # The source endpoint is part of the cache key: a different mirror cannot
   # silently reuse the files from a previous configuration.
-  set(archive_dir "${FETCHCONTENT_BASE_DIR}/archives")
+  set(archive_dir "${_BOOSTPACK_ARCHIVE_CACHE}")
   set(archive "${archive_dir}/${module}.tar.gz")
   file(MAKE_DIRECTORY "${archive_dir}")
   file(LOCK "${archive}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
@@ -144,7 +144,7 @@ function(_boostpack_archive module version url out_archive out_sha)
     message(FATAL_ERROR "BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
   endif()
   if(NOT EXISTS "${archive}")
-    if(FETCHCONTENT_FULLY_DISCONNECTED)
+    if(BOOSTPACK_OFFLINE)
       message(FATAL_ERROR "BoostPack: offline cache is missing the archive for '${module}': ${archive}")
     endif()
     file(DOWNLOAD "${url}" "${archive}.partial"
@@ -216,27 +216,46 @@ function(_boostpack_fetch module version repository template out_source out_bina
   string(REPLACE "@VERSION@" "${version}" url "${url}")
   string(REPLACE "@TAG@" "boost-${version}" url "${url}")
 
-  # Always resolve through cached archive bytes. A local file URL and its
-  # computed hash are passed to FetchContent, including on an unlocked build.
   _boostpack_archive("${module}" "${version}" "${url}" archive sha)
   string(SUBSTRING "${sha}" 0 24 short_sha)
-  set(content_name "bp_${module}_${short_sha}")
-  set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
-  # Offline guards are checked before reaching this local extraction step.
-  set(FETCHCONTENT_FULLY_DISCONNECTED OFF)
-  set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
-  set(download_options "")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-    list(APPEND download_options DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+
+  # Isolated extraction: no FetchContent declarations, cache variables,
+  # disconnected flags, target redirects, or global FetchContent state.
+  set(extract_dir "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
+  file(LOCK "${extract_dir}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
+  if(NOT lock_result STREQUAL "0")
+    message(FATAL_ERROR "BoostPack: cannot lock extraction for '${module}': ${lock_result}")
   endif()
-  FetchContent_Declare(${content_name}
-    URL "${archive}"
-    URL_HASH "SHA256=${sha}"
-    SOURCE_SUBDIR "_boostpack_no_auto_configure"
-    ${download_options})
+  if(NOT EXISTS "${extract_dir}/.boostpack-ready")
+    file(REMOVE_RECURSE "${extract_dir}" "${extract_dir}.partial")
+    file(MAKE_DIRECTORY "${extract_dir}.partial")
+    file(ARCHIVE_EXTRACT INPUT "${archive}" DESTINATION "${extract_dir}.partial")
+    file(RENAME "${extract_dir}.partial" "${extract_dir}")
+    file(WRITE "${extract_dir}/.boostpack-ready" "${sha}\n")
+  endif()
+
+  if(EXISTS "${extract_dir}/CMakeLists.txt"
+      OR EXISTS "${extract_dir}/include/BoostInstall.cmake")
+    set(source_dir "${extract_dir}")
+  else()
+    file(GLOB entries LIST_DIRECTORIES TRUE "${extract_dir}/*")
+    set(roots "")
+    foreach(entry IN LISTS entries)
+      if(IS_DIRECTORY "${entry}" AND
+          (EXISTS "${entry}/CMakeLists.txt"
+           OR EXISTS "${entry}/include/BoostInstall.cmake"))
+        list(APPEND roots "${entry}")
+      endif()
+    endforeach()
+    list(LENGTH roots count)
+    if(NOT count EQUAL 1)
+      message(FATAL_ERROR
+        "BoostPack: archive for '${module}' must contain one Boost module root")
+    endif()
+    list(GET roots 0 source_dir)
+  endif()
+  set(binary_dir "${CMAKE_BINARY_DIR}/_boostpack_binary/${module}/${short_sha}")
   message(STATUS "BoostPack: resolving ${module} from Boost ${version}")
-  FetchContent_MakeAvailable(${content_name})
-  FetchContent_GetProperties(${content_name} SOURCE_DIR source_dir BINARY_DIR binary_dir)
   set(${out_source} "${source_dir}" PARENT_SCOPE)
   set(${out_binary} "${binary_dir}" PARENT_SCOPE)
 endfunction()
@@ -374,9 +393,13 @@ function(boostpack_add)
 
   string(SHA256 repository_hash "${repository}\n${template}")
   string(SUBSTRING "${repository_hash}" 0 12 cache_key)
-  get_filename_component(cache_root "${FETCHCONTENT_BASE_DIR}" ABSOLUTE
-    BASE_DIR "${CMAKE_BINARY_DIR}")
-  set(FETCHCONTENT_BASE_DIR "${cache_root}/boostpack/boost-${BP_VERSION}/${cache_key}")
+  if(BOOSTPACK_CACHE_DIR)
+    get_filename_component(cache_root "${BOOSTPACK_CACHE_DIR}" ABSOLUTE
+      BASE_DIR "${CMAKE_BINARY_DIR}")
+  else()
+    set(cache_root "${CMAKE_BINARY_DIR}/_boostpack")
+  endif()
+  set(_BOOSTPACK_ARCHIVE_CACHE "${cache_root}/boost-${BP_VERSION}/${cache_key}/archives")
   _boostpack_lock_initialize("${BP_VERSION}" "${repository}" "${template}")
 
   # Upstream Boost projects should not install into the consumer or enable
@@ -407,7 +430,7 @@ function(boostpack_add)
       message(FATAL_ERROR
         "BoostPack: '${module}' has no CMakeLists.txt at '${source_dir}'. "
         "Verify that Boost ${BP_VERSION} contains the module and that the "
-        "mirror/cache is populated (offline=${FETCHCONTENT_FULLY_DISCONNECTED}).")
+        "mirror/cache is populated (offline=${BOOSTPACK_OFFLINE}).")
     endif()
 
     _boostpack_needs_support("${source_dir}" needs_support)
