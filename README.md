@@ -60,14 +60,32 @@ boostpack_add(
 | `BOOSTPACK_REPOSITORY` | `https://github.com/boostorg` | Default repository/mirror base |
 | `BOOSTPACK_URL_TEMPLATE` | empty | Override archive URL layout; uses placeholders listed above |
 | `BOOSTPACK_CACHE_DIR` | empty | Reusable downloaded source cache (otherwise build-local) |
-| `BOOSTPACK_OFFLINE` | `OFF` | Do not fetch anything; require existing cached sources |
+| `BOOSTPACK_OFFLINE` | `OFF` | Strict offline mode: require locked, verified cached archives; never download |
+| `BOOSTPACK_LOCKFILE` | empty | JSON lockfile path (relative to the top-level project directory) |
+| `BOOSTPACK_LOCK_MODE` | `READ` | `READ` a committed lockfile or `WRITE` one explicitly |
+
+Normal builds still work without a lockfile. For reproducible builds, generate one explicitly, commit it, and use `READ` mode thereafter:
 
 ```sh
-cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/cache
-cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/cache -DBOOSTPACK_OFFLINE=ON
+# Generate a lock (network permitted on first configure).
+cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/cache \
+  -DBOOSTPACK_LOCKFILE=boostpack.lock.json -DBOOSTPACK_LOCK_MODE=WRITE
+
+# Consume the committed lock; every archive is SHA256-verified.
+cmake -S . -B build -DBOOSTPACK_LOCK_MODE=READ
+
+# Configure without any network access using a prepopulated archive cache.
+cmake -S . -B offline -DBOOSTPACK_CACHE_DIR=/path/to/cache \
+  -DBOOSTPACK_LOCKFILE=boostpack.lock.json -DBOOSTPACK_LOCK_MODE=READ \
+  -DBOOSTPACK_OFFLINE=ON
 ```
 
-The cache is isolated by Boost version and repository/template identity. The `FetchContent` source override `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` (for example `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_PFR`) also works for local or vendored upstream modules.
+The lockfile is JSON (schema 1) and records the Boost version, exact repository and archive URL template, and the complete resolved archive closure. Each module (including optional upstream `boostorg/cmake` support when required) is pinned by its exact URL and **SHA256 of the downloaded archive**. A changed URL, missing module, different hash, or different dependency closure causes configuration to fail in `READ` mode. `WRITE` mode reconstructs the lockfile after CMake finishes configuring, including across multiple `boostpack_add()` calls.
+
+In strict offline mode, **a lockfile in `READ` mode is required**. Every requested archive must already be present in `BOOSTPACK_CACHE_DIR` (or the build-local cache) and pass checksum verification. No network fallback occurs. Remote download URLs must use HTTPS; local archive mirrors may use `file://`. Downloaded archives are cached by Boost version and source endpoint, while verified archive extraction occurs in the build tree. The `FetchContent` source override `FETCHCONTENT_SOURCE_DIR_BOOSTPACK_<UPPERCASE_MODULE>` is available only when lockfiles are disabled, since an arbitrary source directory cannot be verified against a pinned archive hash.
+
+Archive verification does not attest to local edits made **after extraction** into a build directory. Use a clean build tree when evaluating source integrity.
+
 
 Multiple `boostpack_add()` calls incrementally add new dependencies and never duplicate targets. BoostPack temporarily sets `BUILD_TESTING=OFF` only while adding upstream Boost projects, leaving the parent's testing configuration untouched.
 
@@ -81,7 +99,7 @@ Multiple `boostpack_add()` calls incrementally add new dependencies and never du
 
 The supported scope is Boost modules that expose their native CMake targets and link dependencies through CMake target properties. Dependencies that are purely implicit in headers, source files or custom build steps still require explicit support. Configured optional links using `TARGET_NAME_IF_EXISTS` do not trigger downloads. BoostPack does not guarantee support for arbitrary source repositories or every historical release/toolchain combination. No per-header or per-file trimming is performed: the complete source archive of each needed module is downloaded.
 
-Downloaded archives are selected by **release tag**, not commit SHA or independently verified hash. Treat mirror trust and release reproducibility accordingly; strict lockfiles are future work.
+Without a lockfile, Boost source archives are selected by release tag only; release tags may be mutable. With a lockfile, the exact archive bytes, source URL, and complete module closure are verified. Lockfiles must be regenerated explicitly to accept source changes.
 
 ## Examples
 
@@ -106,7 +124,7 @@ cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
-GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, extended modules, and a custom GitHub codeload template. Ordinary pushes and PRs run CI; releases are published only from version tags matching the source version and reachable from `main`.
+GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, extended modules, custom mirror URLs, and real Boost locked/offline builds. Ordinary pushes and PRs run CI; releases are published only from version tags matching the source version and reachable from `main`.
 
 ## License
 
