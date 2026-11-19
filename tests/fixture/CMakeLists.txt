@@ -28,7 +28,7 @@ foreach(module IN LISTS fake_modules)
     endif()
   elseif(module STREQUAL "includes")
     file(WRITE "${dir}/deps.cmake" "target_link_libraries(boost_includes INTERFACE Boost::bar)\n")
-    string(APPEND definition "include(\"${CMAKE_CURRENT_LIST_DIR}/deps.cmake\")\n")
+    string(APPEND definition "include(\"\${CMAKE_CURRENT_LIST_DIR}/deps.cmake\")\n")
   elseif(module STREQUAL "condition")
     string(APPEND definition
       "if(TEST_CASE STREQUAL conditional)\n"
@@ -39,7 +39,7 @@ foreach(module IN LISTS fake_modules)
   elseif(module STREQUAL "dynamic")
     string(APPEND definition
       "set(dependency bar)\n"
-      "target_link_libraries(boost_dynamic INTERFACE Boost::${dependency})\n")
+      "target_link_libraries(boost_dynamic INTERFACE Boost::\${dependency})\n")
   elseif(module STREQUAL "nested")
     file(MAKE_DIRECTORY "${dir}/impl")
     file(WRITE "${dir}/impl/CMakeLists.txt"
