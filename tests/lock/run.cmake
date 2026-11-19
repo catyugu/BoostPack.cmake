@@ -122,7 +122,7 @@ set(lock "${root}/nonexistent.lock.json")
 check_case(offline_new_lock FALSE "cannot create lockfile while offline"
   -DBOOSTPACK_OFFLINE=ON)
 set(lock "${root}/boostpack.lock.json")
-check_case(insecure_source FALSE "must use https:// or file://"
+check_case(insecure_source FALSE "archive URL must use HTTPS or file://"
   -DBOOSTPACK_LOCKFILE= -DLOCK_REPOSITORY=http://invalid.example/source)
 
 # Missing/extra manifest entries must fail instead of silently resolving a new
