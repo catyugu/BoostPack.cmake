@@ -117,10 +117,8 @@ check_case(malformed FALSE "invalid lockfile schema"
   -DBOOSTPACK_LOCK_MODE=READ)
 
 set(lock "${root}/boostpack.lock.json")
-check_case(offline_without_lock FALSE "requires BOOSTPACK_LOCKFILE"
-  -DBOOSTPACK_LOCKFILE= -DBOOSTPACK_LOCK_MODE=READ -DBOOSTPACK_OFFLINE=ON)
-check_case(offline_write FALSE "BOOSTPACK_LOCK_MODE=READ"
-  -DBOOSTPACK_LOCK_MODE=WRITE -DBOOSTPACK_OFFLINE=ON)
+# Offline without a lockfile is tested separately with the legacy
+# FetchContent source cache (archive_mirror_unlocked_offline).
 check_case(insecure_source FALSE "must use https:// or file://"
   -DBOOSTPACK_LOCKFILE= -DLOCK_REPOSITORY=http://invalid.example/source)
 
