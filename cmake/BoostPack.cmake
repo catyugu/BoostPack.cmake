@@ -35,10 +35,6 @@ function(_boostpack_json_string out value)
 endfunction()
 
 function(_boostpack_lock_initialize version repository template)
-  if(BOOSTPACK_OFFLINE AND (NOT BOOSTPACK_LOCKFILE OR NOT BOOSTPACK_LOCK_MODE STREQUAL "READ"))
-    message(FATAL_ERROR
-      "BoostPack: strict offline mode requires BOOSTPACK_LOCKFILE and BOOSTPACK_LOCK_MODE=READ")
-  endif()
   if(BOOSTPACK_LOCKFILE)
     get_filename_component(lockfile "${BOOSTPACK_LOCKFILE}" ABSOLUTE
       BASE_DIR "${CMAKE_SOURCE_DIR}")
