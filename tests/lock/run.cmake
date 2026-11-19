@@ -65,7 +65,7 @@ function(check_case name expected_success expected_message)
   endif()
 endfunction()
 
-check_case(write TRUE "" -DBOOSTPACK_LOCK_MODE=WRITE)
+check_case(create TRUE "" )
 if(NOT EXISTS "${lock}")
   message(FATAL_ERROR "Lockfile was not written")
 endif()
@@ -82,8 +82,8 @@ foreach(module IN ITEMS foo bar support cmake)
   endif()
 endforeach()
 
-check_case(read_fresh TRUE "" -DBOOSTPACK_LOCK_MODE=READ)
-check_case(read_offline TRUE "" -DBOOSTPACK_LOCK_MODE=READ -DBOOSTPACK_OFFLINE=ON)
+check_case(read_fresh TRUE "" )
+check_case(read_offline TRUE ""  -DBOOSTPACK_OFFLINE=ON)
 # Calculate the cache identity from the manifest's repository and URL template.
 set(template "@REPOSITORY@/@MODULE@/@TAG@.tar.gz")
 string(SHA256 repo_hash "${repository}\n${template}")
@@ -93,32 +93,35 @@ if(NOT EXISTS "${foo_archive}")
   message(FATAL_ERROR "Expected cached archive not found: ${foo_archive}")
 endif()
 file(RENAME "${foo_archive}" "${foo_archive}.saved")
-check_case(missing_archive FALSE "offline cache is missing" -DBOOSTPACK_LOCK_MODE=READ -DBOOSTPACK_OFFLINE=ON)
-check_case(redownload TRUE "" -DBOOSTPACK_LOCK_MODE=READ)
+check_case(missing_archive FALSE "offline cache is missing"  -DBOOSTPACK_OFFLINE=ON)
+check_case(redownload TRUE "" )
 file(APPEND "${foo_archive}" "tampering")
-check_case(corrupt_archive FALSE "SHA256 mismatch for cached" -DBOOSTPACK_LOCK_MODE=READ -DBOOSTPACK_OFFLINE=ON)
+check_case(corrupt_archive FALSE "SHA256 mismatch for cached"  -DBOOSTPACK_OFFLINE=ON)
 file(REMOVE "${foo_archive}")
 file(RENAME "${foo_archive}.saved" "${foo_archive}")
 
 check_case(version_mismatch FALSE "boost_version mismatch"
-  -DBOOSTPACK_LOCK_MODE=READ -DTEST_BOOST_VERSION=1.90.0)
+   -DTEST_BOOST_VERSION=1.90.0)
 check_case(repository_mismatch FALSE "repository mismatch"
-  -DBOOSTPACK_LOCK_MODE=READ -DLOCK_REPOSITORY=file:///invalid-source)
+   -DLOCK_REPOSITORY=file:///invalid-source)
 
 string(JSON reduced REMOVE "${data}" modules bar)
 file(WRITE "${root}/missing.lock.json" "${reduced}\n")
 set(lock "${root}/missing.lock.json")
 check_case(missing_module FALSE "module 'bar' is missing from the lockfile"
-  -DBOOSTPACK_LOCK_MODE=READ)
+  )
 
 file(WRITE "${root}/malformed.lock.json" "this is not JSON\n")
 set(lock "${root}/malformed.lock.json")
 check_case(malformed FALSE "invalid lockfile schema"
-  -DBOOSTPACK_LOCK_MODE=READ)
+  )
 
 set(lock "${root}/boostpack.lock.json")
-# Offline without a lockfile is tested separately with the legacy
-# FetchContent source cache (archive_mirror_unlocked_offline).
+# New lockfiles must be created online; archived sources may be reused offline.
+set(lock "${root}/nonexistent.lock.json")
+check_case(offline_new_lock FALSE "cannot create lockfile while offline"
+  -DBOOSTPACK_OFFLINE=ON)
+set(lock "${root}/boostpack.lock.json")
 check_case(insecure_source FALSE "must use https:// or file://"
   -DBOOSTPACK_LOCKFILE= -DLOCK_REPOSITORY=http://invalid.example/source)
 
@@ -127,8 +130,8 @@ check_case(insecure_source FALSE "must use https:// or file://"
 string(JSON extra SET "${data}" modules extra "{\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"url\":\"file:///invalid\"}")
 file(WRITE "${root}/extra.lock.json" "${extra}\n")
 set(lock "${root}/extra.lock.json")
-check_case(extra_entry FALSE "dependency closure mismatch" -DBOOSTPACK_LOCK_MODE=READ)
+check_case(extra_entry FALSE "dependency closure mismatch" )
 set(lock "${root}/boostpack.lock.json")
 
 
-message(STATUS "Lockfile, multi-call closure, strict offline and archive corruption tests passed")
+message(STATUS "Lockfile, multi-call closure, offline and archive corruption tests passed")
