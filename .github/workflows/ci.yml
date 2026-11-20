@@ -55,44 +55,36 @@ jobs:
           cmake --build build/json --config Release --parallel 2
           ctest --test-dir build/json -C Release --output-on-failure
 
-  compatibility:
-    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'compatibility'
-    name: Extended compatibility / Linux
+  manual:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'smoke'
+    name: Manual / ${{ inputs.suite }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
+        if: inputs.suite == 'compatibility'
         with:
           path: .boostpack-cache
           key: boostpack-compat-${{ runner.os }}-${{ inputs.boost_version }}
-      - name: Configure compiled and assembler-dependent modules
+      - name: Extended compatibility
+        if: inputs.suite == 'compatibility'
         env:
           BOOST_RELEASE: ${{ inputs.boost_version }}
-        run: >-
-          cmake -S tests/integration -B build/compatibility
-          "-DBOOST_VERSION=${BOOST_RELEASE}"
-          -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache"
-          -DBOOSTPACK_INTEGRATION_EXTENDED=ON
-          -DBOOSTPACK_INTEGRATION_DEEP=ON
-          -DBOOSTPACK_INTEGRATION_HEAVY=ON
-      - name: Build and test
         run: |
+          cmake -S tests/integration -B build/compatibility \
+            "-DBOOST_VERSION=${BOOST_RELEASE}" \
+            -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache" \
+            -DBOOSTPACK_INTEGRATION_EXTENDED=ON
           cmake --build build/compatibility --config Release --parallel 2
           ctest --test-dir build/compatibility -C Release --output-on-failure
-
-  benchmark:
-    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'benchmark'
-    name: Resolver benchmark / CMake 3.22
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install CMake 3.22
-        run: python -m pip install --upgrade cmake==3.22.6
-      - name: Cold, warm and repeated configure
-        run: cmake -DBENCH_ROOT="${{ github.workspace }}/build/benchmark" -P tests/benchmark/run.cmake
+      - name: Resolver benchmark
+        if: inputs.suite == 'benchmark'
+        run: |
+          python -m pip install --upgrade cmake==3.22.6
+          cmake -DBENCH_ROOT="${{ github.workspace }}/build/benchmark" -P tests/benchmark/run.cmake
       - uses: actions/upload-artifact@v4
+        if: inputs.suite == 'benchmark'
         with:
           name: boostpack-resolver-benchmark
           path: build/benchmark/results.csv

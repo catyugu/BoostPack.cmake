@@ -116,7 +116,7 @@ cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
-The optional deep integration tests compile and run `program_options`, `serialization`, and `iostreams` (`-DBOOSTPACK_INTEGRATION_DEEP=ON`); the heavy option (`-DBOOSTPACK_INTEGRATION_HEAVY=ON`) adds `context`, `coroutine` and `fiber`.
+With `BOOSTPACK_INTEGRATION_EXTENDED=ON`, the test project additionally builds `asio`, `filesystem`, `regex`, `thread`, `program_options`, `serialization`, `iostreams`, `context`, `coroutine` and `fiber`. The assembler-dependent modules require a compatible platform toolchain.
 
 There is **one [CI workflow](.github/workflows/ci.yml)**. Pull requests, main pushes and release tags run only two smoke configurations: Linux with CMake 3.22 and Windows with the runner's CMake. These run the offline synthetic suite (mirrors, lockfiles and resolver regressions) and build/test actual Boost.JSON and Boost.URL targets. Superseded PR runs are canceled. A validated version tag also publishes the standalone file.
 
