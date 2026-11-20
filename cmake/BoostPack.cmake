@@ -137,7 +137,7 @@ endfunction()
 
 function(_boostpack_download module url archive expected)
   if(NOT url MATCHES "^(https://|file://)")
-    message(FATAL_ERROR "BoostPack: archive URL must use HTTPS or file://: ${url}")
+    _boostpack_download_abort("BoostPack: archive URL must use HTTPS or file://: ${url}")
   endif()
   if(EXISTS "${archive}")
     return()
@@ -146,13 +146,13 @@ function(_boostpack_download module url archive expected)
   file(MAKE_DIRECTORY "${archive_dir}")
   file(LOCK "${archive}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
   if(NOT lock_result STREQUAL "0")
-    message(FATAL_ERROR "BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
+    _boostpack_download_abort("BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
   endif()
   if(EXISTS "${archive}")
     return()
   endif()
   if(BOOSTPACK_OFFLINE)
-    message(FATAL_ERROR "BoostPack: offline cache is missing the archive for '${module}': ${archive}")
+    _boostpack_download_abort("BoostPack: offline cache is missing the archive for '${module}': ${archive}")
   endif()
 
   # Skip GitHub's archive redirect without changing the canonical lockfile URL.
@@ -167,13 +167,13 @@ function(_boostpack_download module url archive expected)
   list(GET status 1 detail)
   if(NOT code EQUAL 0)
     file(REMOVE "${archive}.partial")
-    message(FATAL_ERROR "BoostPack: failed to download '${module}' from '${url}': ${detail}\n${log}")
+    _boostpack_download_abort("BoostPack: failed to download '${module}' from '${url}': ${detail}\n${log}")
   endif()
   if(expected)
     file(SHA256 "${archive}.partial" downloaded_sha)
     if(NOT downloaded_sha STREQUAL expected)
       file(REMOVE "${archive}.partial")
-      message(FATAL_ERROR "BoostPack: SHA256 mismatch for downloaded '${module}' from '${url}'")
+      _boostpack_download_abort("BoostPack: SHA256 mismatch for downloaded '${module}' from '${url}'")
     endif()
   endif()
   file(RENAME "${archive}.partial" "${archive}")
@@ -247,93 +247,73 @@ function(_boostpack_module_url module version repository template out_url)
 endfunction()
 
 
-# Native OS shells only detach CMake download workers. CMake itself still
-# owns fetching, hashing, caching and inspecting the actual target graph.
-function(_boostpack_shell_quote out value)
-  string(REPLACE "'" "'\\''" escaped "${value}")
-  set(${out} "'${escaped}'" PARENT_SCOPE)
+# The standalone file is also the worker entry point; no generated scripts or
+# job argument files. One ephemeral status file per in-flight archive is enough.
+function(_boostpack_worker_result result)
+  if(DEFINED _BOOSTPACK_WORKER_STATUS)
+    file(WRITE "${_BOOSTPACK_WORKER_STATUS}.partial" "${result}\n")
+    file(RENAME "${_BOOSTPACK_WORKER_STATUS}.partial" "${_BOOSTPACK_WORKER_STATUS}")
+  endif()
 endfunction()
+
+function(_boostpack_download_abort reason)
+  _boostpack_worker_result("ERROR: ${reason}")
+  message(FATAL_ERROR "${reason}")
+endfunction()
+
+function(_boostpack_shell_quote out value)
+  string(REPLACE "'" "'\\''" quoted "${value}")
+  set(${out} "'${quoted}'" PARENT_SCOPE)
+endfunction()
+
 function(_boostpack_ps_quote out value)
-  string(REPLACE "'" "''" escaped "${value}")
-  set(${out} "'${escaped}'" PARENT_SCOPE)
+  string(REPLACE "'" "''" quoted "${value}")
+  set(${out} "'${quoted}'" PARENT_SCOPE)
 endfunction()
 
 function(_boostpack_start_download module version repository template)
   _boostpack_module_url("${module}" "${version}" "${repository}" "${template}" url)
   _boostpack_expected("${module}" "${url}" expected)
-  set(root "${CMAKE_BINARY_DIR}/_boostpack")
-  set(jobs "${root}/download-jobs")
-  set(job "${jobs}/${module}.cmake")
-  set(worker "${root}/download.cmake")
-  set(log "${jobs}/${module}.log")
-  set(status "${jobs}/${module}.status")
-  set(partial "${status}.partial")
-  file(MAKE_DIRECTORY "${jobs}")
-  file(REMOVE "${status}" "${partial}" "${log}")
+  set(status "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/${module}.status")
+  get_filename_component(dir "${status}" DIRECTORY)
+  file(MAKE_DIRECTORY "${dir}")
+  file(WRITE "${status}" "RUNNING\n")
 
-  _boostpack_json_string(q_module "${module}")
-  _boostpack_json_string(q_url "${url}")
-  _boostpack_json_string(q_archive "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
-  _boostpack_json_string(q_expected "${expected}")
-  file(WRITE "${job}"
-    "set(BP_MODULE ${q_module})\n"
-    "set(BP_URL ${q_url})\n"
-    "set(BP_ARCHIVE ${q_archive})\n"
-    "set(BP_EXPECTED ${q_expected})\n")
-  if(NOT EXISTS "${worker}")
-    file(WRITE "${worker}" [=[
-include("${BOOSTPACK_MODULE_FILE}")
-include("${BP_JOB_FILE}")
-_boostpack_download("${BP_MODULE}" "${BP_URL}" "${BP_ARCHIVE}" "${BP_EXPECTED}")
-]=])
-  endif()
-  set(arg_module "-DBOOSTPACK_MODULE_FILE=${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
-  set(arg_job "-DBP_JOB_FILE=${job}")
+  set(args
+    "-D_BOOSTPACK_WORKER_MODULE=${module}"
+    "-D_BOOSTPACK_WORKER_URL=${url}"
+    "-D_BOOSTPACK_WORKER_ARCHIVE=${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz"
+    "-D_BOOSTPACK_WORKER_EXPECTED=${expected}"
+    "-D_BOOSTPACK_WORKER_STATUS=${status}"
+    "-P" "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
 
   if(WIN32)
-    set(script "${jobs}/${module}.ps1")
-    _boostpack_ps_quote(q_cmake "${CMAKE_COMMAND}")
-    _boostpack_ps_quote(q_arg_module "${arg_module}")
-    _boostpack_ps_quote(q_arg_job "${arg_job}")
-    _boostpack_ps_quote(q_worker "${worker}")
-    _boostpack_ps_quote(q_log "${log}")
-    _boostpack_ps_quote(q_partial "${partial}")
-    _boostpack_ps_quote(q_status "${status}")
-    # PowerShell 5.1 requires a BOM to read non-ASCII paths in the script.
-    string(ASCII 239 187 191 bom)
-    file(WRITE "${script}" "${bom}"
-      "$ErrorActionPreference = 'Continue'\n"
-      "& ${q_cmake} ${q_arg_module} ${q_arg_job} '-P' ${q_worker} *> ${q_log}\n"
-      "$code = $LASTEXITCODE\n"
-      "if ($null -eq $code) { $code = 1 }\n"
-      "[System.IO.File]::WriteAllText(${q_partial}, [string]$code)\n"
-      "[System.IO.File]::Move(${q_partial}, ${q_status})\n")
-    _boostpack_ps_quote(q_arguments "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${script}\"")
-    execute_process(COMMAND powershell.exe -NoProfile -NonInteractive
-      -Command "$ErrorActionPreference='Stop'; Start-Process -FilePath 'powershell.exe' -ArgumentList ${q_arguments} -WindowStyle Hidden"
+    _boostpack_ps_quote(cmake_arg "${CMAKE_COMMAND}")
+    set(ps_args "")
+    foreach(arg IN LISTS args)
+      # Start-Process joins arguments as a Windows command line; embedded
+      # double quotes keep paths with spaces intact.
+      _boostpack_ps_quote(escaped "\"${arg}\"")
+      list(APPEND ps_args "${escaped}")
+    endforeach()
+    string(JOIN ", " ps_args ${ps_args})
+    execute_process(COMMAND powershell.exe -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop'; Start-Process -FilePath ${cmake_arg} -ArgumentList @(${ps_args}) -WindowStyle Hidden"
       RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 15)
   else()
-    set(script "${jobs}/${module}.sh")
-    _boostpack_shell_quote(q_cmake "${CMAKE_COMMAND}")
-    _boostpack_shell_quote(q_arg_module "${arg_module}")
-    _boostpack_shell_quote(q_arg_job "${arg_job}")
-    _boostpack_shell_quote(q_worker "${worker}")
-    _boostpack_shell_quote(q_log "${log}")
-    _boostpack_shell_quote(q_partial "${partial}")
-    _boostpack_shell_quote(q_status "${status}")
-    file(WRITE "${script}"
-      "#!/bin/sh\n"
-      "${q_cmake} ${q_arg_module} ${q_arg_job} -P ${q_worker} > ${q_log} 2>&1\n"
-      "result=$?\n"
-      "printf '%s\\n' \"$result\" > ${q_partial}\n"
-      "${q_cmake} -E rename ${q_partial} ${q_status}\n")
-    _boostpack_shell_quote(q_script "${script}")
+    _boostpack_shell_quote(cmake_arg "${CMAKE_COMMAND}")
+    set(command "${cmake_arg}")
+    foreach(arg IN LISTS args)
+      _boostpack_shell_quote(escaped "${arg}")
+      string(APPEND command " ${escaped}")
+    endforeach()
     execute_process(COMMAND /bin/sh -c
-      "/bin/sh ${q_script} </dev/null >/dev/null 2>&1 &"
+      "${command} </dev/null >/dev/null 2>&1 &"
       RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 15)
   endif()
   if(NOT result STREQUAL "0")
-    message(FATAL_ERROR "BoostPack: could not start download for '${module}': ${error}\n${output}")
+    message(FATAL_ERROR
+      "BoostPack: failed starting download of '${module}': ${error}\n${output}")
   endif()
   message(STATUS "BoostPack: started download of ${module}")
 endfunction()
@@ -343,21 +323,18 @@ function(_boostpack_reap_downloads active out_active)
   foreach(module IN LISTS active)
     set(status "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/${module}.status")
     if(NOT EXISTS "${status}")
+      message(FATAL_ERROR "BoostPack: worker status missing for '${module}'")
+    endif()
+    file(READ "${status}" result)
+    string(STRIP "${result}" result)
+    if(result STREQUAL "RUNNING")
       list(APPEND remaining "${module}")
-      continue()
-    endif()
-    file(READ "${status}" code)
-    string(STRIP "${code}" code)
-    if(NOT code STREQUAL "0")
-      set(logfile "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/${module}.log")
-      set(details "")
-      if(EXISTS "${logfile}")
-        file(READ "${logfile}" details)
+    elseif(result STREQUAL "OK")
+      if(NOT EXISTS "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
+        message(FATAL_ERROR "BoostPack: download of '${module}' finished without an archive")
       endif()
-      message(FATAL_ERROR "BoostPack: download of '${module}' failed (exit ${code}):\n${details}")
-    endif()
-    if(NOT EXISTS "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
-      message(FATAL_ERROR "BoostPack: download of '${module}' finished without an archive")
+    else()
+      message(FATAL_ERROR "BoostPack: download of '${module}' failed:\n${result}")
     endif()
   endforeach()
   set(${out_active} "${remaining}" PARENT_SCOPE)
@@ -836,13 +813,25 @@ function(boostpack_add)
       if(idle GREATER 420)
         message(FATAL_ERROR "BoostPack: timed out waiting for downloads: ${inflight}")
       endif()
-      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.1)
+      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.2)
     elseif(queue)
       message(FATAL_ERROR "BoostPack: resolver stalled on '${queue}'")
     endif()
   endwhile()
+  if(EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs")
+    file(REMOVE_RECURSE "${CMAKE_BINARY_DIR}/_boostpack/download-jobs")
+  endif()
 
   set_property(GLOBAL PROPERTY BOOSTPACK_VERSION "${BP_VERSION}")
   set_property(GLOBAL PROPERTY BOOSTPACK_REPOSITORY "${repository}")
   set_property(GLOBAL PROPERTY BOOSTPACK_URL_TEMPLATE "${template}")
 endfunction()
+
+# CMake -P executes the same standalone file in worker mode. A status update
+# is the final operation, after _boostpack_download has atomically published
+# its archive. Failed downloads publish their diagnostic before aborting.
+if(DEFINED _BOOSTPACK_WORKER_MODULE)
+  _boostpack_download("${_BOOSTPACK_WORKER_MODULE}" "${_BOOSTPACK_WORKER_URL}"
+    "${_BOOSTPACK_WORKER_ARCHIVE}" "${_BOOSTPACK_WORKER_EXPECTED}")
+  _boostpack_worker_result("OK")
+endif()
