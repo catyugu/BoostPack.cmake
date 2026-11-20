@@ -116,6 +116,8 @@ cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
+The optional deep integration tests compile and run `program_options`, `serialization`, and `iostreams` (`-DBOOSTPACK_INTEGRATION_DEEP=ON`). The separately dispatched [Extended Compatibility Action](.github/workflows/compatibility.yml) also exercises the assembler-dependent `context`, `coroutine` and `fiber` modules without gating normal CI.
+
 The [CI workflow](.github/workflows/ci.yml) runs platform, compiler, mirror, lockfile and offline tests on pushes, pull requests and release tags. The resolver benchmark is **separate** and runs only on demand, via [Actions → Benchmark](https://github.com/catyugu/BoostPack.cmake/actions/workflows/benchmark.yml) or locally:
 
 ```sh
