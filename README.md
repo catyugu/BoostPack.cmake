@@ -2,138 +2,128 @@
 
 [![CI](https://github.com/catyugu/BoostPack.cmake/actions/workflows/ci.yml/badge.svg)](https://github.com/catyugu/BoostPack.cmake/actions/workflows/ci.yml)
 
-**Choose any Boost release and modules from one CMake file.** BoostPack retrieves just the chosen upstream Boost repositories and their transitive dependencies **on demand**, reads each downloaded module's upstream CMake target declarations, and registers the original `Boost::<module>` targets. No precomputed module registry, supported-version whitelist, Boost installation, Boost.Build, Boostdep, BCP, Python, or package manager is required by consumers.
+BoostPack is a standalone CMake file that downloads selected Boost module repositories and their transitive dependencies, then exposes the upstream `Boost::<module>` targets. Dependencies are discovered from the modules' CMake targets at configure time; there is no version-specific module database or Boost superproject checkout.
 
-Requirements: CMake **3.22+**, a C++ compiler, and network access on first use (or a populated source cache). Upstream modules may have additional toolchain requirements.
+Consumers need CMake **3.22+**, a C++ compiler, and network access on the first download (or a populated archive cache). No Python, Boost.Build, package manager, or other dependency tool is required. Individual Boost modules may impose additional toolchain requirements.
 
-## Quick start
+## Usage
 
-Copy [`cmake/BoostPack.cmake`](cmake/BoostPack.cmake) into your project, or get the standalone file from the release.
+Copy [`cmake/BoostPack.cmake`](cmake/BoostPack.cmake) into your project, or use the file attached to a [release](https://github.com/catyugu/BoostPack.cmake/releases).
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
 project(example LANGUAGES CXX)
 
 include(cmake/BoostPack.cmake)
-boostpack_add(
-    VERSION 1.92.0
-    COMPONENTS unordered container pfr mp11
-)
+boostpack_add(VERSION 1.92.0 COMPONENTS unordered container pfr mp11)
 
 add_executable(example main.cpp)
+target_compile_features(example PRIVATE cxx_std_20)
 target_link_libraries(example PRIVATE
-    Boost::unordered Boost::container Boost::pfr Boost::mp11)
+  Boost::unordered Boost::container Boost::pfr Boost::mp11)
 ```
 
-Run `cmake -S . -B build` and `cmake --build build`. Version `1.92.0` above is only an example; you can select **any published Boost release version** for which the requested module repositories include the release tag and an upstream `CMakeLists.txt`. Unsupported versions/modules produce fetch or CMake errors rather than using stale metadata.
+Configure and build as usual with `cmake -S . -B build` and `cmake --build build`. The version above is an example, not a built-in whitelist. A requested release/module must have an upstream archive and CMake support for its native `Boost::` target.
 
-### Specify a mirror or private repository
-
-By default, BoostPack downloads archives from `https://github.com/boostorg/<module>/archive/refs/tags/boost-<version>.tar.gz`.
-
-If the alternative host follows the same archive path convention, override the repository base URL:
+The public entry point is:
 
 ```cmake
 boostpack_add(
-    VERSION 1.89.0
-    COMPONENTS json url
-    REPOSITORY https://your-mirror.example/boostorg
+  VERSION <Boost release>
+  COMPONENTS <module> [<module> ...]
+  [REPOSITORY <base URL>]
+  [URL_TEMPLATE <archive URL template>]
 )
 ```
 
-For hosts with different archive layouts, supply an URL template. The placeholders are `@REPOSITORY@`, `@MODULE@`, `@VERSION@`, and `@TAG@` (`boost-<version>`):
+You may call `boostpack_add()` repeatedly to add modules incrementally. Within one configure, all calls must use the same Boost version and source endpoint. BoostPack rejects collisions with `Boost::` targets created outside BoostPack instead of mixing different Boost installations.
+
+### Repository and mirrors
+
+By default, module `json` at Boost `1.92.0` is downloaded from:
+
+```text
+https://github.com/boostorg/json/archive/refs/tags/boost-1.92.0.tar.gz
+```
+
+Set `REPOSITORY` for a mirror using the same layout. For a different archive layout, pass `URL_TEMPLATE`:
 
 ```cmake
 boostpack_add(
-    VERSION 1.92.0
-    COMPONENTS pfr mp11
-    URL_TEMPLATE "https://codeload.github.com/boostorg/@MODULE@/tar.gz/refs/tags/@TAG@"
+  VERSION 1.92.0
+  COMPONENTS json url
+  URL_TEMPLATE "https://codeload.github.com/boostorg/@MODULE@/tar.gz/refs/tags/@TAG@"
 )
 ```
 
-The source endpoint can be selected using the `REPOSITORY` and `URL_TEMPLATE` arguments of `boostpack_add()`. Both default to the official Boost GitHub repositories. A CMake configure may only use one Boost release and source endpoint; conflicting calls are rejected.
+Available placeholders are `@REPOSITORY@` (the base URL), `@MODULE@`, `@VERSION@` (`1.92.0`), and `@TAG@` (`boost-1.92.0`). Remote archives must use HTTPS; local mirrors can use `file://` URLs.
 
-### Cache, offline builds and reproducibility
+### Cache, offline mode and lockfiles
 
-BoostPack exposes just three optional cache variables. Downloading and extracting Boost sources is entirely owned by BoostPack: it does **not** change or consult the host project's `FetchContent` settings or declarations.
+Only three BoostPack-wide cache variables are exposed:
 
-| BoostPack setting | Default | Behavior |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `BOOSTPACK_CACHE_DIR` | Build-local | Optional reusable archive cache (separated by Boost version and source endpoint) |
-| `BOOSTPACK_OFFLINE` | `OFF` | Never access the network; use cached archives only |
-| `BOOSTPACK_LOCKFILE` | Empty | Optional JSON lockfile (relative to the top-level source directory) |
+| `BOOSTPACK_CACHE_DIR` | Build-local cache | Reuse downloaded archives across build directories |
+| `BOOSTPACK_OFFLINE` | `OFF` | Prohibit network downloads; require cached archives |
+| `BOOSTPACK_LOCKFILE` | Unset | Path to an optional JSON dependency lockfile |
 
-Lockfile behavior is automatic. When `BOOSTPACK_LOCKFILE` is set and the file does not exist, BoostPack resolves the complete dependency closure and **creates** the file. When it exists, BoostPack **verifies** every source URL and archive SHA256 as well as the Boost version and complete closure; any mismatch fails configuration. To intentionally regenerate a lockfile, delete it and configure again. No separate READ/WRITE mode is needed.
+When a lockfile path is provided, BoostPack **creates** the file if it is absent, or **verifies** it if present. The file records the Boost version, repository, URL template and complete resolved module set (including upstream `boostorg/cmake` support when needed). Each archive is pinned by its URL and SHA256. To update a lockfile intentionally, delete it and configure again.
+
+For reproducible source downloads across separate build directories, use the **same shared cache** in both configurations:
 
 ```sh
-# First configure: download Boost sources and generate a lockfile.
-cmake -S . -B build -DBOOSTPACK_LOCKFILE=boostpack.lock.json
+# First configure: populate the cache and create boostpack.lock.json.
+cmake -S . -B build -DBOOSTPACK_CACHE_DIR=/path/to/boostpack-cache \
+  -DBOOSTPACK_LOCKFILE=boostpack.lock.json
 
-# Subsequent configure: verify the existing lockfile.
-cmake -S . -B build
-
-# Strictly offline, using the existing lockfile and a populated shared cache.
-cmake -S . -B offline -DBOOSTPACK_LOCKFILE=boostpack.lock.json \
-  -DBOOSTPACK_CACHE_DIR=/path/to/cache -DBOOSTPACK_OFFLINE=ON
+# Fresh offline build: read and verify the same lockfile and cached archives.
+cmake -S . -B build-offline -DBOOSTPACK_CACHE_DIR=/path/to/boostpack-cache \
+  -DBOOSTPACK_LOCKFILE=boostpack.lock.json -DBOOSTPACK_OFFLINE=ON
 ```
 
-The first and third commands must use the same `BOOSTPACK_CACHE_DIR` if they use different build directories. Without a lockfile, offline mode still requires previously cached archives, but no source hashes are pinned across machines. When `BOOSTPACK_LOCKFILE` is set but missing, offline mode fails rather than generating an incomplete lockfile.
+Offline mode also works without a lockfile if the archives are already cached; a missing *requested* lockfile cannot be created offline. Cache entries are separated by Boost version and source endpoint. Archive verification does not detect changes made after extraction in a build tree, and it does not guarantee byte-identical compiled binaries.
 
-The lockfile is a JSON document (schema 1) that pins the Boost version, source endpoint, and every resolved archive's URL and SHA256, including version-matched upstream `boostorg/cmake` support when necessary. `BOOSTPACK_LOCKFILE` may be committed to version control for reproducible dependency sources. Lockfile verification covers downloaded archive bytes, not user modifications to files **after extraction**; use a clean build directory when checking source integrity.
+BoostPack manages downloads and extraction independently. It neither reads nor modifies the host project's `FetchContent` declarations, cache location or offline settings.
 
-Only HTTPS remote URLs and local `file://` archive mirrors are accepted. Downloads use TLS verification, per-archive file locks, and atomic cache updates. Extracted sources and binary directories are isolated in the consumer build tree; shared cache contents are limited to archives.
+## Dependency discovery and scope
 
-Multiple `boostpack_add()` calls incrementally add new dependencies and never duplicate targets. BoostPack temporarily sets `BUILD_TESTING=OFF` only while adding upstream Boost projects, leaving the parent's testing configuration untouched.
+BoostPack configures each requested module's upstream `CMakeLists.txt` and inspects its target link properties, including targets created by included files and subdirectories. Missing `Boost::` dependencies are fetched recursively; version-matched `boostorg/cmake` support is loaded on demand.
 
-## How dependency discovery works
+Common generator expressions are resolved before dependency discovery, so inactive conditional branches, install-only links and optional missing targets do not trigger downloads. Multi-config generators include dependencies required by any configured build configuration. Unsupported link expressions produce a diagnostic rather than a speculative dependency list.
 
-1. Each requested module is fetched from its own `boostorg/<module>` repository at the selected Boost release tag (no superproject download).
-2. BoostPack configures each fetched module with its upstream CMake declarations (and loads version-matched `boostorg/cmake` support on demand where required).
-3. It reads the configured targets' real CMake link properties, including targets created in subdirectories, and fetches missing `Boost::` dependencies until the closure is complete.
-4. The requested `Boost::` targets are available immediately for `target_link_libraries()`.
+The resolver covers dependencies expressed through CMake target link properties. Implicit header/source/custom-step dependencies are outside that contract. Boost modules without suitable upstream CMake support are not guaranteed to work. Downloads are **module archives**, not trimmed header or file subsets.
 
+## Examples and testing
 
-The supported scope is Boost modules that expose their native CMake targets and link dependencies through CMake target properties. Dependencies that are purely implicit in headers, source files or custom build steps still require explicit support. Configured optional links using `TARGET_NAME_IF_EXISTS` do not trigger downloads. BoostPack does not guarantee support for arbitrary source repositories or every historical release/toolchain combination. No per-header or per-file trimming is performed: the complete source archive of each needed module is downloaded.
+- [`examples/minimal`](examples/minimal): single header-only PFR module.
+- [`examples/json`](examples/json): JSON and URL libraries with transitive dependencies.
+- [`examples/custom-version`](examples/custom-version): select a Boost release, repository mirror or URL template using the example's `BOOST_VERSION`, `BOOST_MIRROR` and `BOOST_SOURCE_TEMPLATE` options.
 
-Without a lockfile, Boost sources are selected by upstream release tags, which may be mutable. With a lockfile, archive bytes, URLs and the complete module closure are verified. Delete the lockfile to regenerate it explicitly.
-
-## Examples
-
-- [`examples/minimal`](examples/minimal) — a basic PFR single-module project.
-- [`examples/json`](examples/json) — compiled JSON + URL libraries and their transitive dependencies.
-- [`examples/custom-version`](examples/custom-version) — configurable Boost release and mirror using lightweight PFR + Mp11; pass `-DBOOST_VERSION=1.89.0 -DBOOST_MIRROR=...`.
-
-## Tests and CI
-
-The offline unit tests generate fake Boost repositories with varying dependency graphs and validate closure discovery across CMake functions, variables, conditions and subdirectories, CMake support loading, multiple releases, URL templates and custom mirrors, repeated calls, version/source conflicts, cycles, offline errors, and invalid input. A separate local archive fixture tests real CMake archive downloading without GitHub.
+Run the synthetic, offline-capable unit tests:
 
 ```sh
 cmake -S . -B build -DBUILD_TESTING=ON
-ctest --test-dir build -C Debug --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
-The real integration project verifies compiled and header-only Boost libraries across multiple versions. Enable the extended suite for Asio, Filesystem, Regex, Stacktrace and Thread:
+For real Boost integration tests, including compiled modules:
 
 ```sh
-cmake -S tests/integration -B build/integration -DBOOST_VERSION=1.89.0 -DBOOSTPACK_INTEGRATION_EXTENDED=ON
+cmake -S tests/integration -B build/integration \
+  -DBOOST_VERSION=1.92.0 -DBOOSTPACK_INTEGRATION_EXTENDED=ON
 cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
-GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, extended modules, custom mirror URLs, and real Boost locked/offline builds. Ordinary pushes and PRs run CI; releases are published only from version tags matching the source version and reachable from `main`.
-
-### Reproducible resolver benchmark
-
-The benchmark uses 24 synthetic Boost modules in a transitive chain, with local `file://` archives and no network access or external tools. It measures fresh configuration and download into an empty cache (`cold`), configuration from the same archive cache with offline mode enabled (`warm`), and reconfiguration of that build tree (`reconfigure`):
+The [CI workflow](.github/workflows/ci.yml) runs platform, compiler, mirror, lockfile and offline tests on pushes, pull requests and release tags. The resolver benchmark is **separate** and runs only on demand, via [Actions → Benchmark](https://github.com/catyugu/BoostPack.cmake/actions/workflows/benchmark.yml) or locally:
 
 ```sh
 cmake -DBENCH_ROOT=build/resolver-benchmark -P tests/benchmark/run.cmake
 ```
 
-Results are saved to `build/resolver-benchmark/results.csv`. To run the benchmark on GitHub Actions, open **Actions → Benchmark → Run workflow**; the separate `workflow_dispatch` workflow uses CMake 3.22 and uploads `results.csv` as an artifact. It is not triggered by pushes or pull requests, and release CI does not depend on it. Timings depend on the machine and filesystem; comparisons should use the same environment.
-
-Generator-expression discovery now resolves common link expressions, including `IF`, `BOOL`, `CONFIG`, `BUILD_INTERFACE`, `INSTALL_INTERFACE`, `LINK_ONLY`, and optional target names. Single-configuration builds only fetch their active branch; multi-configuration generators include the union of their build configurations. Unsupported link expressions fail with a diagnostic rather than silently downloading inactive branches.
+It measures cold-cache, warm-cache and repeat configuration for 24 local synthetic modules and writes `results.csv`. GitHub Actions uploads the CSV as an artifact. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and release guidance.
 
 ## License
 
-BoostPack itself is [MIT licensed](LICENSE). Each fetched Boost module remains subject to its own upstream license (usually Boost Software License 1.0).
+BoostPack is [MIT licensed](LICENSE). Boost modules retain their respective upstream licenses (usually Boost Software License 1.0).
