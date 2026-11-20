@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(BoostPackArchiveMirror LANGUAGES CXX)
+project(BoostPackArchiveMirror LANGUAGES NONE)
 
 # A host FetchContent dependency intentionally uses the former BoostPack name.
 # BoostPack must neither inspect nor mutate these unrelated native settings.
