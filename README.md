@@ -130,7 +130,7 @@ The benchmark uses 24 synthetic Boost modules in a transitive chain, with local 
 cmake -DBENCH_ROOT=build/resolver-benchmark -P tests/benchmark/run.cmake
 ```
 
-Results are saved to `build/resolver-benchmark/results.csv`. CI runs this benchmark on CMake 3.22 and uploads its CSV as an artifact. Timings depend on the machine and filesystem; comparisons should use the same environment.
+Results are saved to `build/resolver-benchmark/results.csv`. To run the benchmark on GitHub Actions, open **Actions → Benchmark → Run workflow**; the separate `workflow_dispatch` workflow uses CMake 3.22 and uploads `results.csv` as an artifact. It is not triggered by pushes or pull requests, and release CI does not depend on it. Timings depend on the machine and filesystem; comparisons should use the same environment.
 
 Generator-expression discovery now resolves common link expressions, including `IF`, `BOOL`, `CONFIG`, `BUILD_INTERFACE`, `INSTALL_INTERFACE`, `LINK_ONLY`, and optional target names. Single-configuration builds only fetch their active branch; multi-configuration generators include the union of their build configurations. Unsupported link expressions fail with a diagnostic rather than silently downloading inactive branches.
 
