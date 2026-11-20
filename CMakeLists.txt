@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(BoostPack VERSION 0.2.1 LANGUAGES CXX)
+project(BoostPack VERSION 0.2.2 LANGUAGES CXX)
 
 include(CTest)
 if(BUILD_TESTING)

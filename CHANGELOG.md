@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 - 2026-11-20
+
+- Add one optional `BOOSTPACK_LOCKFILE` setting; automatically create the JSON lockfile if absent and strictly verify Boost version, source endpoint, archive SHA256 and dependency closure if present.
+- Keep `BOOSTPACK_CACHE_DIR` and `BOOSTPACK_OFFLINE` as isolated BoostPack options. Remove the duplicate repository and URL-template cache settings and avoid introducing a lockfile mode switch.
+- Download and extract Boost source archives independently using CMake file primitives; never modify or consult the host project's FetchContent cache, disconnected flags, declarations or global state.
+- Pin transitive archives including version-matched boostorg/cmake support; use HTTPS/TLS verification, file locks, atomic archive downloads, and build-local extraction.
+- Exercise online lock generation, locked and unlocked offline builds, tampering, missing and mismatched lock entries, and real Boost integration with CMake 3.22.
+
 ## 0.2.1 - 2026-11-20
 
 - Discover Boost dependencies from the actual configured CMake target graph rather than scanning text in only the root `CMakeLists.txt`. Support dependencies created through functions, variables, included files, subdirectories and active platform conditions; ignore optional `TARGET_NAME_IF_EXISTS` links.

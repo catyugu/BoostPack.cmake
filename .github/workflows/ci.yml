@@ -38,7 +38,7 @@ jobs:
         run: ctest --test-dir build -C Debug --output-on-failure
 
   integration:
-    name: Boost ${{ matrix.version }} / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }}
+    name: Boost ${{ matrix.version }} / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }} / extended=${{ matrix.extended }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -49,11 +49,13 @@ jobs:
             compiler: gcc
             version: '1.89.0'
             shared: 'OFF'
+            extended: 'OFF'
           - os: ubuntu-latest
             cmake: system
             compiler: clang
             version: '1.92.0'
             shared: 'OFF'
+            extended: 'OFF'
           - os: ubuntu-latest
             cmake: system
             compiler: gcc
@@ -71,6 +73,7 @@ jobs:
             compiler: appleclang
             version: '1.92.0'
             shared: 'OFF'
+            extended: 'OFF'
     steps:
       - uses: actions/checkout@v4
       - name: Install CMake 3.22
@@ -79,7 +82,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .boostpack-cache
-          key: boostpack-dynamic-${{ matrix.version }}-${{ runner.os }}-source
+          key: boostpack-${{ matrix.version }}-${{ runner.os }}-source
       - name: Configure real Boost modules
         shell: bash
         run: |
@@ -91,14 +94,14 @@ jobs:
             if cmake -S tests/integration -B build/integration \
               -DBOOST_VERSION=${{ matrix.version }} \
               -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache" \
-              -DBOOSTPACK_INTEGRATION_EXTENDED=${{ matrix.extended || 'OFF' }} \
+              -DBOOSTPACK_INTEGRATION_EXTENDED=${{ matrix.extended }} \
               -DBUILD_SHARED_LIBS=${{ matrix.shared }} "${args[@]}"; then
               exit 0
             fi
             if [[ "$attempt" == 3 ]]; then
               exit 1
             fi
-            echo "Boost archive fetch failed; retrying configuration ($attempt/3)"
+            echo "Boost archive fetch/configure failed; retrying ($attempt/3)"
             sleep 8
           done
       - name: Build
@@ -136,10 +139,35 @@ jobs:
       - name: Test
         run: ctest --test-dir build/mirror --output-on-failure
 
+  reproducible:
+    name: Locked archive / strict offline / CMake 3.22
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CMake 3.22
+        run: python -m pip install --upgrade cmake==3.22.6
+      - name: Generate lockfile using real Boost sources
+        run: >-
+          cmake -S examples/custom-version -B build/locked
+          -DBOOST_VERSION=1.89.0
+          -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.locked-cache"
+          -DBOOSTPACK_LOCKFILE="${{ github.workspace }}/build/boostpack.lock.json"
+
+      - name: Configure completely offline from verified archives
+        run: >-
+          cmake -S examples/custom-version -B build/locked
+          -DBOOST_VERSION=1.89.0
+          -DBOOSTPACK_OFFLINE=ON
+
+      - name: Build
+        run: cmake --build build/locked --parallel 2
+      - name: Test
+        run: ctest --test-dir build/locked --output-on-failure
+
   release:
     name: Publish tagged release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [unit, integration, mirror]
+    needs: [unit, integration, mirror, reproducible]
     runs-on: ubuntu-latest
     permissions:
       contents: write

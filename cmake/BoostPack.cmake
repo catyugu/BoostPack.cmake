@@ -1,51 +1,269 @@
-# BoostPack.cmake v0.2.1
+# BoostPack.cmake v0.2.2
 # Copyright (c) 2026 Catyugu
 # SPDX-License-Identifier: MIT
 #
-# On-demand Boost module source resolution and native CMake target integration.
-# Consumer requirements: CMake 3.22+ and a C++ compiler. No metadata registry.
+# Resolve Boost module sources and their native CMake target dependencies.
+# Consumer requirements: CMake 3.22+ and a C++ compiler.
 
 if(CMAKE_VERSION VERSION_LESS 3.22)
   message(FATAL_ERROR "BoostPack requires CMake 3.22 or newer")
 endif()
 
 include_guard(GLOBAL)
-include(FetchContent)
 
-set(BOOSTPACK_REPOSITORY "https://github.com/boostorg" CACHE STRING
-  "Base URL of Boost module repositories (GitHub by default)")
-set(BOOSTPACK_URL_TEMPLATE "" CACHE STRING
-  "Archive URL template with @REPOSITORY@, @MODULE@ and @TAG@ tokens")
-set(BOOSTPACK_CACHE_DIR "" CACHE PATH
-  "Optional shared directory for downloaded Boost module source archives")
-option(BOOSTPACK_OFFLINE "Use already populated Boost sources without network" OFF)
+# BoostPack owns its cache and offline controls; no FetchContent global state.
+set(BOOSTPACK_CACHE_DIR "" CACHE PATH "Optional shared Boost archive cache")
+option(BOOSTPACK_OFFLINE "Use cached Boost archives only (no network)" OFF)
+set(BOOSTPACK_LOCKFILE "" CACHE FILEPATH "Optional JSON lockfile (created when missing)")
 
-# Fetch sources without auto-configuring the upstream directory.
+# A lockfile pins complete upstream archive bytes, not mutable tag names.
+# JSON is parsed as data (never included as executable CMake code).
+function(_boostpack_json_string out value)
+  string(REPLACE "\\" "\\\\" escaped "${value}")
+  string(REPLACE "\"" "\\\"" escaped "${escaped}")
+  string(REPLACE "\n" "\\n" escaped "${escaped}")
+  string(REPLACE "\r" "\\r" escaped "${escaped}")
+  string(REPLACE "\t" "\\t" escaped "${escaped}")
+  set(${out} "\"${escaped}\"" PARENT_SCOPE)
+endfunction()
+
+function(_boostpack_lock_initialize version repository template)
+  if(BOOSTPACK_LOCKFILE)
+    get_filename_component(lockfile "${BOOSTPACK_LOCKFILE}" ABSOLUTE
+      BASE_DIR "${CMAKE_SOURCE_DIR}")
+    if(EXISTS "${lockfile}")
+      set(mode READ)
+    else()
+      if(BOOSTPACK_OFFLINE)
+        message(FATAL_ERROR "BoostPack: cannot create lockfile while offline: ${lockfile}")
+      endif()
+      set(mode WRITE)
+    endif()
+  else()
+    set(lockfile "")
+    set(mode "")
+  endif()
+
+  get_property(initialized GLOBAL PROPERTY BOOSTPACK_LOCK_INITIALIZED)
+  if(initialized)
+    get_property(previous_path GLOBAL PROPERTY BOOSTPACK_LOCK_PATH)
+    get_property(previous_mode GLOBAL PROPERTY BOOSTPACK_LOCK_MODE_ACTIVE)
+    if(NOT previous_path STREQUAL lockfile OR NOT previous_mode STREQUAL mode)
+      message(FATAL_ERROR "BoostPack: lockfile settings cannot change during configuration")
+    endif()
+    return()
+  endif()
+  set_property(GLOBAL PROPERTY BOOSTPACK_LOCK_INITIALIZED TRUE)
+  set_property(GLOBAL PROPERTY BOOSTPACK_LOCK_PATH "${lockfile}")
+  set_property(GLOBAL PROPERTY BOOSTPACK_LOCK_MODE_ACTIVE "${mode}")
+  if(NOT lockfile)
+    return()
+  endif()
+
+  if(mode STREQUAL "READ")
+    file(READ "${lockfile}" data)
+    string(JSON schema_type ERROR_VARIABLE error TYPE "${data}" schema)
+    if(NOT error STREQUAL "NOTFOUND" OR NOT schema_type STREQUAL "NUMBER")
+      message(FATAL_ERROR "BoostPack: invalid lockfile schema type: ${lockfile}")
+    endif()
+    string(JSON schema ERROR_VARIABLE error GET "${data}" schema)
+    if(NOT error STREQUAL "NOTFOUND" OR NOT schema STREQUAL "1")
+      message(FATAL_ERROR "BoostPack: invalid or unsupported lockfile schema: ${lockfile}")
+    endif()
+    foreach(key IN ITEMS boost_version repository url_template)
+      string(JSON value ERROR_VARIABLE error GET "${data}" "${key}")
+      if(NOT error STREQUAL "NOTFOUND")
+        message(FATAL_ERROR "BoostPack: lockfile missing '${key}': ${lockfile}")
+      endif()
+      if(key STREQUAL "boost_version")
+        set(expected "${version}")
+      elseif(key STREQUAL "repository")
+        set(expected "${repository}")
+      else()
+        set(expected "${template}")
+      endif()
+      if(NOT value STREQUAL expected)
+        message(FATAL_ERROR "BoostPack: lockfile ${key} mismatch: expected '${expected}', got '${value}'")
+      endif()
+    endforeach()
+    string(JSON members_type ERROR_VARIABLE error TYPE "${data}" modules)
+    if(NOT error STREQUAL "NOTFOUND" OR NOT members_type STREQUAL "OBJECT")
+      message(FATAL_ERROR "BoostPack: lockfile 'modules' must be an object")
+    endif()
+  else()
+    # Create a new lock only when none exists, accumulating the complete
+    # module closure across multiple boostpack_add() calls.
+    set(data "{}")
+    string(JSON data SET "${data}" schema 1)
+    foreach(key IN ITEMS boost_version repository url_template)
+      if(key STREQUAL "boost_version")
+        set(value "${version}")
+      elseif(key STREQUAL "repository")
+        set(value "${repository}")
+      else()
+        set(value "${template}")
+      endif()
+      _boostpack_json_string(quoted "${value}")
+      string(JSON data SET "${data}" "${key}" "${quoted}")
+    endforeach()
+    string(JSON data SET "${data}" modules "{}")
+  endif()
+  set_property(GLOBAL PROPERTY BOOSTPACK_LOCK_DATA "${data}")
+  cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL _boostpack_lock_finish)
+endfunction()
+
+function(_boostpack_archive module version url out_archive out_sha)
+  if(NOT url MATCHES "^(https://|file://)")
+    message(FATAL_ERROR "BoostPack: archive URL must use HTTPS or file://: ${url}")
+  endif()
+  get_property(mode GLOBAL PROPERTY BOOSTPACK_LOCK_MODE_ACTIVE)
+  get_property(data GLOBAL PROPERTY BOOSTPACK_LOCK_DATA)
+  if(mode STREQUAL "READ")
+    string(JSON expected ERROR_VARIABLE error GET "${data}" modules "${module}" sha256)
+    if(NOT error STREQUAL "NOTFOUND")
+      message(FATAL_ERROR "BoostPack: module '${module}' is missing from the lockfile")
+    endif()
+    string(LENGTH "${expected}" length)
+    if(NOT length EQUAL 64 OR expected MATCHES "[^0-9a-fA-F]")
+      message(FATAL_ERROR "BoostPack: invalid SHA256 for '${module}' in lockfile")
+    endif()
+    string(JSON locked_url ERROR_VARIABLE error GET "${data}" modules "${module}" url)
+    if(NOT error STREQUAL "NOTFOUND" OR NOT locked_url STREQUAL url)
+      message(FATAL_ERROR "BoostPack: lockfile URL mismatch for '${module}' (expected '${url}')")
+    endif()
+  endif()
+
+  # The source endpoint is part of the cache key: a different mirror cannot
+  # silently reuse the files from a previous configuration.
+  set(archive_dir "${_BOOSTPACK_ARCHIVE_CACHE}")
+  set(archive "${archive_dir}/${module}.tar.gz")
+  file(MAKE_DIRECTORY "${archive_dir}")
+  file(LOCK "${archive}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
+  if(NOT lock_result STREQUAL "0")
+    message(FATAL_ERROR "BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
+  endif()
+  if(NOT EXISTS "${archive}")
+    if(BOOSTPACK_OFFLINE)
+      message(FATAL_ERROR "BoostPack: offline cache is missing the archive for '${module}': ${archive}")
+    endif()
+    file(DOWNLOAD "${url}" "${archive}.partial"
+      STATUS status LOG log TLS_VERIFY ON)
+    list(GET status 0 code)
+    list(GET status 1 detail)
+    if(NOT code EQUAL 0)
+      file(REMOVE "${archive}.partial")
+      message(FATAL_ERROR "BoostPack: failed to download '${module}' from '${url}': ${detail}\n${log}")
+    endif()
+    file(SHA256 "${archive}.partial" downloaded_sha)
+    if(mode STREQUAL "READ" AND NOT downloaded_sha STREQUAL expected)
+      file(REMOVE "${archive}.partial")
+      message(FATAL_ERROR "BoostPack: SHA256 mismatch for downloaded '${module}' from '${url}'")
+    endif()
+    file(RENAME "${archive}.partial" "${archive}")
+  endif()
+  file(SHA256 "${archive}" actual_sha)
+  if(mode STREQUAL "READ" AND NOT actual_sha STREQUAL expected)
+    message(FATAL_ERROR "BoostPack: SHA256 mismatch for cached '${module}': ${archive}")
+  endif()
+
+  get_property(archive_modules GLOBAL PROPERTY BOOSTPACK_LOCK_ARCHIVES)
+  list(APPEND archive_modules "${module}")
+  list(REMOVE_DUPLICATES archive_modules)
+  set_property(GLOBAL PROPERTY BOOSTPACK_LOCK_ARCHIVES "${archive_modules}")
+
+  if(mode STREQUAL "WRITE")
+    _boostpack_json_string(url_json "${url}")
+    _boostpack_json_string(sha_json "${actual_sha}")
+    set(record "{}")
+    string(JSON record SET "${record}" sha256 "${sha_json}")
+    string(JSON record SET "${record}" url "${url_json}")
+    string(JSON data SET "${data}" modules "${module}" "${record}")
+    set_property(GLOBAL PROPERTY BOOSTPACK_LOCK_DATA "${data}")
+  endif()
+  set(${out_archive} "${archive}" PARENT_SCOPE)
+  set(${out_sha} "${actual_sha}" PARENT_SCOPE)
+endfunction()
+
+function(_boostpack_lock_finish)
+  get_property(mode GLOBAL PROPERTY BOOSTPACK_LOCK_MODE_ACTIVE)
+  get_property(lockfile GLOBAL PROPERTY BOOSTPACK_LOCK_PATH)
+  get_property(data GLOBAL PROPERTY BOOSTPACK_LOCK_DATA)
+  get_property(resolved GLOBAL PROPERTY BOOSTPACK_LOCK_ARCHIVES)
+  if(mode STREQUAL "READ")
+    string(JSON count LENGTH "${data}" modules)
+    list(LENGTH resolved resolved_count)
+    if(NOT count EQUAL resolved_count)
+      message(FATAL_ERROR
+        "BoostPack: lockfile dependency closure mismatch: ${count} entries, "
+        "${resolved_count} configured archives")
+    endif()
+  elseif(mode STREQUAL "WRITE")
+    get_filename_component(dir "${lockfile}" DIRECTORY)
+    file(MAKE_DIRECTORY "${dir}")
+    file(WRITE "${lockfile}.tmp" "${data}\n")
+    file(RENAME "${lockfile}.tmp" "${lockfile}")
+    message(STATUS "BoostPack: wrote lockfile ${lockfile}")
+  endif()
+endfunction()
+
+# SOURCE_SUBDIR stops FetchContent from adding the module before we have
+# established the Boost version and prepared any upstream CMake support.
 function(_boostpack_fetch module version repository template out_source out_binary)
   set(url "${template}")
   string(REPLACE "@REPOSITORY@" "${repository}" url "${url}")
   string(REPLACE "@MODULE@" "${module}" url "${url}")
   string(REPLACE "@VERSION@" "${version}" url "${url}")
   string(REPLACE "@TAG@" "boost-${version}" url "${url}")
-  set(content_name "boostpack_${module}")
-  set(download_options "")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-    list(APPEND download_options DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+
+  _boostpack_archive("${module}" "${version}" "${url}" archive sha)
+  string(SUBSTRING "${sha}" 0 24 short_sha)
+
+  # Isolated extraction: no FetchContent declarations, cache variables,
+  # disconnected flags, target redirects, or global FetchContent state.
+  set(extract_dir "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
+  get_filename_component(extract_parent "${extract_dir}" DIRECTORY)
+  file(MAKE_DIRECTORY "${extract_parent}")
+  file(LOCK "${extract_dir}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
+  if(NOT lock_result STREQUAL "0")
+    message(FATAL_ERROR "BoostPack: cannot lock extraction for '${module}': ${lock_result}")
   endif()
-  set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER)
-  FetchContent_Declare(${content_name}
-    URL "${url}"
-    SOURCE_SUBDIR "_boostpack_no_auto_configure"
-    ${download_options})
+  if(NOT EXISTS "${extract_dir}/.boostpack-ready")
+    file(REMOVE_RECURSE "${extract_dir}" "${extract_dir}.partial")
+    file(MAKE_DIRECTORY "${extract_dir}.partial")
+    file(ARCHIVE_EXTRACT INPUT "${archive}" DESTINATION "${extract_dir}.partial")
+    file(RENAME "${extract_dir}.partial" "${extract_dir}")
+    file(WRITE "${extract_dir}/.boostpack-ready" "${sha}\n")
+  endif()
+
+  if(EXISTS "${extract_dir}/CMakeLists.txt"
+      OR EXISTS "${extract_dir}/include/BoostInstall.cmake")
+    set(source_dir "${extract_dir}")
+  else()
+    file(GLOB entries LIST_DIRECTORIES TRUE "${extract_dir}/*")
+    set(roots "")
+    foreach(entry IN LISTS entries)
+      if(IS_DIRECTORY "${entry}" AND
+          (EXISTS "${entry}/CMakeLists.txt"
+           OR EXISTS "${entry}/include/BoostInstall.cmake"))
+        list(APPEND roots "${entry}")
+      endif()
+    endforeach()
+    list(LENGTH roots count)
+    if(NOT count EQUAL 1)
+      message(FATAL_ERROR
+        "BoostPack: archive for '${module}' must contain one Boost module root")
+    endif()
+    list(GET roots 0 source_dir)
+  endif()
+  set(binary_dir "${CMAKE_BINARY_DIR}/_boostpack_binary/${module}/${short_sha}")
   message(STATUS "BoostPack: resolving ${module} from Boost ${version}")
-  FetchContent_MakeAvailable(${content_name})
-  FetchContent_GetProperties(${content_name} SOURCE_DIR source_dir BINARY_DIR binary_dir)
   set(${out_source} "${source_dir}" PARENT_SCOPE)
   set(${out_binary} "${binary_dir}" PARENT_SCOPE)
 endfunction()
 
-# Fetch version-matched upstream CMake helpers only for modules that require
-# them (boost_install/boost_message), without growing a metadata registry.
+# Some upstream projects call boost_install() (and related helpers) when
+# BOOST_SUPERPROJECT_VERSION is set. Obtain the version-matched official
+# boostorg/cmake support only when a module actually references it.
 function(_boostpack_needs_support source_dir out_needed)
   file(READ "${source_dir}/CMakeLists.txt" contents)
   if(contents MATCHES "boost_install[ \t\r\n]*\\("
@@ -57,7 +275,9 @@ function(_boostpack_needs_support source_dir out_needed)
   endif()
 endfunction()
 
-# Enumerate configured targets from the upstream module's entire CMake tree.
+# CMake resolves namespaced link dependencies during generation, after all
+# add_subdirectory() calls. Inspect the actual configured target graph, so
+# included files, functions, variables and platform conditions are respected.
 function(_boostpack_targets directory out_targets)
   get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
   get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
@@ -68,8 +288,6 @@ function(_boostpack_targets directory out_targets)
   set(${out_targets} "${targets}" PARENT_SCOPE)
 endfunction()
 
-# Link properties are evaluated after CMake conditionals, variables, includes
-# and functions. Namespaced dependencies may be defined later, at generation.
 function(_boostpack_dependencies module source_dir out_deps)
   _boostpack_targets("${source_dir}" targets)
   set(deps "")
@@ -79,12 +297,13 @@ function(_boostpack_dependencies module source_dir out_deps)
       if(NOT links)
         continue()
       endif()
+      # Optional links do not require the referenced target to be present.
       string(REGEX REPLACE "\\$<TARGET_NAME_IF_EXISTS:Boost::[A-Za-z][A-Za-z0-9_]*>"
         "" links "${links}")
       string(REGEX MATCHALL "Boost::[A-Za-z][A-Za-z0-9_]*" references "${links}")
       foreach(reference IN LISTS references)
         string(SUBSTRING "${reference}" 7 -1 dep)
-        # A module's extra exported targets belong to the same repository.
+        # A module may export additional targets (Boost::asio_spawn, etc.).
         if(dep STREQUAL module OR dep MATCHES "^${module}_")
           continue()
         endif()
@@ -97,6 +316,8 @@ function(_boostpack_dependencies module source_dir out_deps)
   set(${out_deps} "${deps}" PARENT_SCOPE)
 endfunction()
 
+# Preserve the existing cycle diagnostic even though CMake can tolerate some
+# INTERFACE_LIBRARY cycles during generation.
 function(_boostpack_check_cycles modules)
   set(pending ${modules})
   set(ordered "")
@@ -143,7 +364,7 @@ function(boostpack_add)
   if(BP_REPOSITORY)
     set(repository "${BP_REPOSITORY}")
   else()
-    set(repository "${BOOSTPACK_REPOSITORY}")
+    set(repository "https://github.com/boostorg")
   endif()
   string(REGEX REPLACE "/+$" "" repository "${repository}")
   if(NOT repository)
@@ -151,8 +372,6 @@ function(boostpack_add)
   endif()
   if(BP_URL_TEMPLATE)
     set(template "${BP_URL_TEMPLATE}")
-  elseif(BOOSTPACK_URL_TEMPLATE)
-    set(template "${BOOSTPACK_URL_TEMPLATE}")
   else()
     set(template "@REPOSITORY@/@MODULE@/archive/refs/tags/@TAG@.tar.gz")
   endif()
@@ -173,8 +392,6 @@ function(boostpack_add)
     message(FATAL_ERROR "BoostPack: URL_TEMPLATE cannot change in the same CMake configure")
   endif()
 
-  # Keep sources for different releases and mirrors separate even when the
-  # same build tree or shared cache directory is reused by multiple projects.
   string(SHA256 repository_hash "${repository}\n${template}")
   string(SUBSTRING "${repository_hash}" 0 12 cache_key)
   if(BOOSTPACK_CACHE_DIR)
@@ -183,12 +400,11 @@ function(boostpack_add)
   else()
     set(cache_root "${CMAKE_BINARY_DIR}/_boostpack")
   endif()
-  set(FETCHCONTENT_BASE_DIR "${cache_root}/boost-${BP_VERSION}/${cache_key}")
-  if(BOOSTPACK_OFFLINE)
-    set(FETCHCONTENT_FULLY_DISCONNECTED ON)
-  endif()
+  set(_BOOSTPACK_ARCHIVE_CACHE "${cache_root}/boost-${BP_VERSION}/${cache_key}/archives")
+  _boostpack_lock_initialize("${BP_VERSION}" "${repository}" "${template}")
 
-  # Disable upstream tests and installation only in this function scope.
+  # Upstream Boost projects should not install into the consumer or enable
+  # their own test suites. These variables remain local to this function.
   set(BUILD_TESTING OFF)
   set(BOOST_SKIP_INSTALL_RULES ON)
   set(BOOST_SUPERPROJECT_VERSION "${BP_VERSION}")

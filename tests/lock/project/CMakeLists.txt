@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.22)
+project(BoostPackLockFixture LANGUAGES NONE)
+
+if(NOT DEFINED LOCK_REPOSITORY OR NOT DEFINED TEST_BINARY_DIR)
+  message(FATAL_ERROR "Missing fixture parameters")
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/BoostPack.cmake")
+if(NOT DEFINED TEST_BOOST_VERSION)
+  set(TEST_BOOST_VERSION 1.91.0)
+endif()
+set(archive_template "@REPOSITORY@/@MODULE@/@TAG@.tar.gz")
+boostpack_add(VERSION "${TEST_BOOST_VERSION}" REPOSITORY "${LOCK_REPOSITORY}"
+  URL_TEMPLATE "${archive_template}" COMPONENTS foo)
+boostpack_add(VERSION "${TEST_BOOST_VERSION}" REPOSITORY "${LOCK_REPOSITORY}"
+  URL_TEMPLATE "${archive_template}" COMPONENTS support)
+foreach(expected IN ITEMS foo bar support)
+  if(NOT TARGET Boost::${expected})
+    message(FATAL_ERROR "Missing expected ${expected} target")
+  endif()
+endforeach()
