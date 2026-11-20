@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.3 - 2026-11-21
+
+- Register the streaming dependency test through the common CMake fixture and check download ordering without relying on transient status files persisting after completion.
+- Share CMake build parallelism setup between CI and the manually dispatched Examples workflow; retain the ceiling of 1.5 times available logical cores.
+- Remove the unused Manual workflow. Keep extended integration and resolver benchmarking available as local CMake commands.
+- Reduce README to the consumer API, cache and lockfile behavior, dependency scope, and links to development instructions. No public API changes.
+
+## 0.3.2 - 2026-11-20
+
+- Stream independent Boost archive downloads: configure each completed module and enqueue newly discovered target dependencies without a layer-wide download barrier.
+- Remove per-module downloader scripts and redundant extraction markers and locks, while preserving real inter-process archive-cache and lockfile locks.
+- Run routine CI with unit and real Boost integration tests on Linux, Windows and macOS; move all example builds into a manually dispatched Examples workflow.
+- Set CI build parallelism from the available logical core count rather than a fixed two workers.
+
+## 0.3.1 - 2026-11-20
+
+- Improve cold configure with concurrent archive retrieval and fewer GitHub redirects.
+- Consolidate build-local archives, extracted sources and upstream build trees under `_boostpack/`.
+- Speed up test fixtures on Windows through Ninja, parallel CTest execution and avoiding unnecessary compiler detection.
+
 ## 0.3.0 - 2026-11-20
 
 - Add diverse executable examples across Boost 1.89.0 and 1.92.0, header-only and compiled modules, and shared-library linking on Linux, Windows and macOS.
