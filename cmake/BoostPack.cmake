@@ -1,4 +1,4 @@
-# BoostPack.cmake v0.3.2
+# BoostPack.cmake v0.3.3
 # Copyright (c) 2026 Catyugu
 # SPDX-License-Identifier: MIT
 #
