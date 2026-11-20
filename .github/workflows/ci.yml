@@ -71,7 +71,7 @@ jobs:
             version: '1.92.0'
             shared: 'OFF'
             extended: 'ON'
-            deep: 'OFF'
+            deep: 'ON'
           - os: macos-latest
             cmake: system
             compiler: appleclang
