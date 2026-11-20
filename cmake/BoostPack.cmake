@@ -287,7 +287,7 @@ function(_boostpack_start_download module version repository template)
     "-D_BOOSTPACK_WORKER_STATUS=${status}"
     "-P" "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
 
-  if(WIN32)
+  if(CMAKE_HOST_WIN32)
     _boostpack_ps_quote(cmake_arg "${CMAKE_COMMAND}")
     set(ps_args "")
     foreach(arg IN LISTS args)
