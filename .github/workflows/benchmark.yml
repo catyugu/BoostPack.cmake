@@ -1,0 +1,26 @@
+name: Benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Resolver benchmark / CMake 3.22 / Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CMake 3.22
+        run: python -m pip install --upgrade cmake==3.22.6
+      - name: Cold, warm and repeated configure
+        run: >-
+          cmake -DBENCH_ROOT="${{ github.workspace }}/build/benchmark"
+          -P tests/benchmark/run.cmake
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boostpack-resolver-benchmark
+          path: build/benchmark/results.csv
+          if-no-files-found: error
+
