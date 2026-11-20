@@ -159,6 +159,21 @@ elseif(TEST_CASE STREQUAL "closure")
   if(NOT modules STREQUAL "bar;config;foo;headers")
     message(FATAL_ERROR "Incorrect closure: ${modules}")
   endif()
+elseif(TEST_CASE STREQUAL "parallel")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS foo other pfr)
+  foreach(module IN ITEMS foo other pfr bar config headers)
+    if(NOT TARGET Boost::${module}
+        OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/sources/${module}"
+        OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/binary/${module}")
+      message(FATAL_ERROR "Missing target or grouped build files for ${module}")
+    endif()
+  endforeach()
+  if(NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/archives/boost-1.92.0"
+      OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download.cmake"
+      OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_sources"
+      OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_binary")
+    message(FATAL_ERROR "BoostPack generated files are not grouped under _boostpack")
+  endif()
 elseif(TEST_CASE STREQUAL "incremental")
   _fixture_boostpack_add(VERSION 1.76.0 COMPONENTS pfr)
   _fixture_boostpack_add(VERSION 1.76.0 COMPONENTS foo pfr)
