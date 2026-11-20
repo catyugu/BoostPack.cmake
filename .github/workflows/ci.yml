@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           cmake -S tests/integration -B build/integration \
             -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
-          cmake --build build/integration --config Release --parallel 2
+          cmake --build build/integration --config Release --parallel
           ctest --test-dir build/integration -C Release --output-on-failure
       - name: Build and run every example
         shell: bash
@@ -56,6 +56,6 @@ jobs:
             name="${directory##*/}"
             cmake -S "$directory" -B "build/examples/$name" \
               -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
-            cmake --build "build/examples/$name" --config Release --parallel 2
+            cmake --build "build/examples/$name" --config Release --parallel
             ctest --test-dir "build/examples/$name" -C Release --output-on-failure
           done
