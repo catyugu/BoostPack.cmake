@@ -19,4 +19,6 @@ cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
+To measure source resolution, run `cmake -DBENCH_ROOT=build/resolver-benchmark -P tests/benchmark/run.cmake`; compare cold/warm/reconfigure times on the same machine. The benchmark uses only synthetic local Boost module archives and outputs CSV results.
+
 The CI matrix covers multiple Boost releases, CMake 3.22, Windows, Linux, macOS, CMake archive mirrors, locked and strictly offline real Boost builds, and static/shared compiled libraries. Releases are published on matching `v*` tags only after all CI jobs succeed; the tag commit must be reachable from `main`.
