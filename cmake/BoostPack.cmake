@@ -351,6 +351,17 @@ function(_boostpack_fetch module version repository template out_source out_bina
   # A directory keyed by the archive SHA becomes visible only after
   # extraction has completed and the temporary tree is renamed into place.
   # No redundant ready marker or extraction-only lock file is necessary.
+  if(EXISTS "${extract_dir}")
+    # A cached extraction with its root CMake file removed is incomplete.
+    # Keep validation structural: a marker cannot prove file integrity.
+    file(GLOB roots "${extract_dir}/CMakeLists.txt"
+      "${extract_dir}/*/CMakeLists.txt"
+      "${extract_dir}/include/BoostInstall.cmake"
+      "${extract_dir}/*/include/BoostInstall.cmake")
+    if(NOT roots)
+      file(REMOVE_RECURSE "${extract_dir}")
+    endif()
+  endif()
   if(NOT EXISTS "${extract_dir}")
     file(REMOVE_RECURSE "${extract_dir}.partial")
     file(MAKE_DIRECTORY "${extract_dir}.partial")
