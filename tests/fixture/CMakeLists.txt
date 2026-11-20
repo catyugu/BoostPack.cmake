@@ -83,14 +83,6 @@ foreach(module IN LISTS fake_modules)
       "target_link_libraries(boost_genex_bad_condition INTERFACE \"$<IF:$<BOOL:$<JOIN:1,_>>,Boost::bar,Boost::headers>\")\n")
   elseif(module STREQUAL "stream_root")
     string(APPEND definition "target_link_libraries(boost_stream_root INTERFACE Boost::stream_leaf)\n")
-  elseif(module STREQUAL "stream_peer")
-    # The root archive is pre-cached; stream_leaf must be dispatched before
-    # the other requested module is configured, not after a batch barrier.
-    string(APPEND definition
-      "if(NOT EXISTS \"${CMAKE_BINARY_DIR}/_boostpack/download-jobs/stream_leaf.cmake\" AND\n"
-      "    NOT EXISTS \"${CMAKE_BINARY_DIR}/_boostpack/archives/stream_leaf.tar.gz\")\n"
-      "  message(FATAL_ERROR \"Newly discovered stream_leaf was not scheduled\")\n"
-      "endif()\n")
   elseif(module STREQUAL "support")
     string(APPEND definition
       "target_link_libraries(boost_support INTERFACE Boost::config)\n"
@@ -178,9 +170,14 @@ elseif(TEST_CASE STREQUAL "parallel")
       message(FATAL_ERROR "Missing target or grouped build files for ${module}")
     endif()
   endforeach()
+  file(GLOB ready_markers "${CMAKE_BINARY_DIR}/_boostpack/sources/*/*/.boostpack-ready")
+  file(GLOB extraction_locks "${CMAKE_BINARY_DIR}/_boostpack/sources/*/*.lock")
+  if(ready_markers OR extraction_locks)
+    message(FATAL_ERROR "Redundant extraction markers or locks remain: ${ready_markers};${extraction_locks}")
+  endif()
   if(NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/archives/boost-1.92.0"
-      OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download.cmake"
-      OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs"
+      OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download.cmake"
+      OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs"
       OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_sources"
       OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_binary")
     message(FATAL_ERROR "BoostPack generated files are not grouped under _boostpack")
@@ -200,8 +197,8 @@ elseif(TEST_CASE STREQUAL "streaming")
       message(FATAL_ERROR "Streaming resolver missed Boost::${module}")
     endif()
   endforeach()
-  if(NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/stream_leaf.status")
-    message(FATAL_ERROR "Transitive dependency was not downloaded asynchronously")
+  if(EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs")
+    message(FATAL_ERROR "Transient downloader states were not cleaned up")
   endif()
 elseif(TEST_CASE STREQUAL "async_failure")
   _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS pfr other module_missing)
