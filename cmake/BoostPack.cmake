@@ -264,7 +264,8 @@ endfunction()
 function(_boostpack_needs_support source_dir out_needed)
   # Helpers can be used by includes and nested CMakeLists.txt files.
   file(GLOB_RECURSE scripts LIST_DIRECTORIES FALSE
-    "${source_dir}/CMakeLists.txt" "${source_dir}/*.cmake")
+    "${source_dir}/CMakeLists.txt" "${source_dir}/*/CMakeLists.txt"
+    "${source_dir}/*.cmake")
   set(needed FALSE)
   foreach(script IN LISTS scripts)
     # Tests are disabled, and should not cause extra archive downloads.
