@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake -S . -B build/tests -DBUILD_TESTING=ON
-          ctest --test-dir build/tests -C Release --output-on-failure --timeout 180
+          ctest --test-dir build/tests -C Release --verbose --timeout 35 --stop-on-failure
       - name: Configure and run Boost integration tests
         shell: bash
         run: |
