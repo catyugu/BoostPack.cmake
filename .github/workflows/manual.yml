@@ -38,7 +38,7 @@ jobs:
             "-DBOOST_VERSION=${BOOST_RELEASE}" \
             -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache" \
             -DBOOSTPACK_INTEGRATION_EXTENDED=ON
-          cmake --build build/compatibility --config Release --parallel 2
+          cmake --build build/compatibility --config Release --parallel
           ctest --test-dir build/compatibility -C Release --output-on-failure
       - name: Resolver benchmark
         if: inputs.suite == 'benchmark'
