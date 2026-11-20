@@ -56,15 +56,26 @@ function(run_case label directory offline)
   if(NOT result EQUAL 0)
     message(FATAL_ERROR "${label} configure failed:\n${output}\n${error}")
   endif()
-  # CMake 3.22 and newer releases use different -E time message formats.
-  string(REGEX MATCH "Elapsed time[^0-9]*([0-9]+([.][0-9]+)?)"
-    elapsed "${output}\n${error}")
-  if(NOT elapsed)
-    message(FATAL_ERROR "Could not parse CMake -E time output:\n${output}\n${error}")
+  # CMake 3.22 prints integer wall time plus a fractional clock time;
+  # newer versions print a fractional wall time directly.
+  string(REGEX MATCH "Elapsed time[^\r\n]*" timer "${output}\n${error}")
+  if(NOT timer)
+    message(FATAL_ERROR "Could not locate CMake -E time output:\n${output}\n${error}")
   endif()
-  set(seconds "${CMAKE_MATCH_1}")
+  string(REGEX MATCH "([0-9]+([.][0-9]+)?) s[.] [(]clock[)]"
+    precise "${timer}")
+  if(precise)
+    set(seconds "${CMAKE_MATCH_1}")
+  else()
+    string(REGEX MATCH "Elapsed time[^0-9]*([0-9]+([.][0-9]+)?)"
+      elapsed "${timer}")
+    if(NOT elapsed)
+      message(FATAL_ERROR "Could not parse CMake -E time output: ${timer}")
+    endif()
+    set(seconds "${CMAKE_MATCH_1}")
+  endif()
   file(APPEND "${root}/results.csv" "${label},${seconds}\n")
-  message(STATUS "${label}: ${seconds} s")
+  message(STATUS "${label}: ${seconds} s [${timer}]")
 endfunction()
 
 message(STATUS "BoostPack resolution benchmark: 24 synthetic modules, CMake ${CMAKE_VERSION}")
