@@ -31,12 +31,16 @@ jobs:
         with:
           path: .boostpack-cache
           key: boostpack-ci-${{ runner.os }}-1.89-1.92
-      - name: Run tests
+      - name: Configure and run unit tests
         shell: bash
         run: |
           set -euo pipefail
           cmake -S . -B build/tests -DBUILD_TESTING=ON
-          ctest --test-dir build/tests -C Release --output-on-failure
+          ctest --test-dir build/tests -C Release --output-on-failure --timeout 180
+      - name: Configure and run Boost integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
           cmake -S tests/integration -B build/integration \
             -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
           cmake --build build/integration --config Release --parallel 2
