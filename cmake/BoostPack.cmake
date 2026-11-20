@@ -162,7 +162,7 @@ function(_boostpack_download module url archive expected)
   endif()
   message(STATUS "BoostPack: downloading ${module}")
   file(DOWNLOAD "${download_url}" "${archive}.partial"
-    STATUS status LOG log TLS_VERIFY ON)
+    STATUS status LOG log TLS_VERIFY ON TIMEOUT 300 INACTIVITY_TIMEOUT 60)
   list(GET status 0 code)
   list(GET status 1 detail)
   if(NOT code EQUAL 0)
@@ -250,6 +250,10 @@ endfunction()
 # add_subdirectory()/target inspection determine the next frontier.
 # execute_process() pipelines start all COMMAND processes concurrently on
 # CMake 3.22+, so no shell or third-party download utility is required.
+# Download independent modules with a tiny generated CMake project.  CMake
+# 3.22's execute_process(COMMAND ... COMMAND ...) is a PIPELINE (not a process
+# pool): download-worker stdout can close the next worker's stdin (SIGPIPE).
+# Native build targets give each download its own process and independent IO.
 function(_boostpack_prefetch modules version repository template)
   if(BOOSTPACK_OFFLINE)
     return()
@@ -269,12 +273,18 @@ function(_boostpack_prefetch modules version repository template)
     return()
   endif()
 
-  set(worker "${CMAKE_BINARY_DIR}/_boostpack/download.cmake")
-  file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/_boostpack")
+  set(root "${CMAKE_BINARY_DIR}/_boostpack")
+  set(worker "${root}/download.cmake")
+  set(project_dir "${root}/download-project")
+  set(binary_dir "${root}/download-build")
+  set(job_dir "${root}/download-jobs")
+  file(MAKE_DIRECTORY "${project_dir}" "${job_dir}")
   file(WRITE "${worker}" [=[
 include("${BOOSTPACK_MODULE_FILE}")
+include("${BP_JOB_FILE}")
 _boostpack_download("${BP_MODULE}" "${BP_URL}" "${BP_ARCHIVE}" "${BP_EXPECTED}")
 ]=])
+
   message(STATUS "BoostPack: downloading ${count} modules in parallel")
   while(pending)
     list(LENGTH pending batch_size)
@@ -283,25 +293,54 @@ _boostpack_download("${BP_MODULE}" "${BP_URL}" "${BP_ARCHIVE}" "${BP_EXPECTED}")
     endif()
     list(SUBLIST pending 0 ${batch_size} batch)
     list(SUBLIST pending ${batch_size} -1 pending)
-    set(commands "")
+
+    set(project "cmake_minimum_required(VERSION 3.22)\nproject(BoostPackDownloads LANGUAGES NONE)\n")
+    set(targets "")
     foreach(module IN LISTS batch)
       _boostpack_module_url("${module}" "${version}" "${repository}" "${template}" url)
       _boostpack_expected("${module}" "${url}" expected)
-      list(APPEND commands COMMAND "${CMAKE_COMMAND}"
-        "-DBOOSTPACK_MODULE_FILE=${CMAKE_CURRENT_FUNCTION_LIST_FILE}"
-        "-DBP_MODULE=${module}"
-        "-DBP_URL=${url}"
-        "-DBP_ARCHIVE=${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz"
-        "-DBP_EXPECTED=${expected}"
-        -P "${worker}")
+      _boostpack_json_string(module_value "${module}")
+      _boostpack_json_string(url_value "${url}")
+      _boostpack_json_string(archive_value "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
+      _boostpack_json_string(expected_value "${expected}")
+      file(WRITE "${job_dir}/${module}.cmake"
+        "set(BP_MODULE ${module_value})\n"
+        "set(BP_URL ${url_value})\n"
+        "set(BP_ARCHIVE ${archive_value})\n"
+        "set(BP_EXPECTED ${expected_value})\n")
+      string(APPEND project
+        "add_custom_target(boostpack_fetch_${module}\n"
+        "  COMMAND \"${CMAKE_COMMAND}\"\n"
+        "    \"-DBOOSTPACK_MODULE_FILE=${CMAKE_CURRENT_FUNCTION_LIST_FILE}\"\n"
+        "    \"-DBP_JOB_FILE=${job_dir}/${module}.cmake\"\n"
+        "    -P \"${worker}\" VERBATIM)\n")
+      list(APPEND targets "boostpack_fetch_${module}")
     endforeach()
-    execute_process(${commands}
-      RESULTS_VARIABLE results OUTPUT_QUIET ERROR_VARIABLE errors)
-    foreach(result IN LISTS results)
-      if(NOT result STREQUAL "0")
-        message(FATAL_ERROR "BoostPack: concurrent archive download failed:\n${errors}")
-      endif()
-    endforeach()
+    string(REPLACE ";" " " targets "${targets}")
+    string(APPEND project "add_custom_target(boostpack_downloads ALL DEPENDS ${targets})\n")
+    file(WRITE "${project_dir}/CMakeLists.txt" "${project}")
+
+    set(configure "${CMAKE_COMMAND}" -S "${project_dir}" -B "${binary_dir}" -G "${CMAKE_GENERATOR}")
+    if(CMAKE_GENERATOR_PLATFORM)
+      list(APPEND configure -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+      list(APPEND configure -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+    if(CMAKE_MAKE_PROGRAM)
+      list(APPEND configure "-DCMAKE_MAKE_PROGRAM:FILEPATH=${CMAKE_MAKE_PROGRAM}")
+    endif()
+    execute_process(COMMAND ${configure}
+      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 120)
+    if(NOT result STREQUAL "0")
+      message(FATAL_ERROR "BoostPack: download project configuration failed:\n${output}\n${errors}")
+    endif()
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" --build "${binary_dir}" --config Release --parallel ${batch_size}
+      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 600)
+    if(NOT result STREQUAL "0")
+      message(FATAL_ERROR "BoostPack: concurrent archive download failed:\n${output}\n${errors}")
+    endif()
   endwhile()
 endfunction()
 
