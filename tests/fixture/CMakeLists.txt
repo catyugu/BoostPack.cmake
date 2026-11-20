@@ -82,10 +82,7 @@ endfunction()
 ]=])
 # Build local Boost-shaped archives so every configuration test is self-contained.
 set(fixture_mirror "${CMAKE_CURRENT_BINARY_DIR}/mirror")
-foreach(module IN LISTS fake_modules)
-  list(APPEND archive_modules "${module}")
-endforeach()
-list(APPEND archive_modules cmake)
+set(archive_modules ${fake_modules} cmake)
 foreach(module IN LISTS archive_modules)
   file(MAKE_DIRECTORY "${fixture_mirror}/${module}")
   execute_process(COMMAND "${CMAKE_COMMAND}" -E tar czf
