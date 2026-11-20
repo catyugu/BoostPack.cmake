@@ -70,7 +70,7 @@ Resolution covers CMake target links, not implicit header, source or custom-comm
 
 ## Examples and development
 
-See [`examples/`](examples/) for header-only, compiled, mixed-version and offline-cache usage. [CI](.github/workflows/ci.yml) runs unit and integration tests on Linux, Windows and macOS; the [Examples workflow](.github/workflows/examples.yml) builds and tests all examples on manual dispatch.
+See [`examples/`](examples/) for header-only, compiled, alternate Boost releases and offline-cache usage. [CI](.github/workflows/ci.yml) runs unit and integration tests on Linux, Windows and macOS; the [Examples workflow](.github/workflows/examples.yml) builds and tests all examples on manual dispatch.
 
 Testing commands, benchmarks and release details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
