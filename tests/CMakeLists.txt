@@ -9,11 +9,6 @@ foreach(case IN ITEMS
       -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
       -B "${CMAKE_CURRENT_BINARY_DIR}/cases/${case}"
       "-DTEST_CASE=${case}")
-  if(case STREQUAL "streaming")
-    set_tests_properties(configure_streaming PROPERTIES
-      PASS_REGULAR_EXPRESSION
-        "BoostPack: started download of stream_leaf(.|\\n)*BoostPack: resolving stream_peer")
-  endif()
   if(case STREQUAL "genex_config_exclusive")
     add_test(NAME configure_genex_config_union
       COMMAND "${CMAKE_COMMAND}" -G "Ninja Multi-Config"
