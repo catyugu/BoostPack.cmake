@@ -37,7 +37,7 @@ jobs:
           fi
 
           version=$(sed -nE 's/^# BoostPack\.cmake v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' cmake/BoostPack.cmake)
-          project_version=$(sed -nE 's/^project\(BoostPack VERSION ([0-9]+\.[0-9]+\.[0-9]+) LANGUAGES CXX\)$/\1/p' CMakeLists.txt)
+          project_version=$(sed -nE 's/^project\(BoostPack VERSION ([0-9]+\.[0-9]+\.[0-9]+) LANGUAGES NONE\)$/\1/p' CMakeLists.txt)
           test -n "$version" && test "$version" = "$project_version"
           tag="v${version}"
 

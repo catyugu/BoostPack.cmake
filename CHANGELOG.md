@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 - 2026-11-20
+
+- Keep full three-platform CI coverage while running independent offline regression cases in parallel (`ctest -j 4`).
+- Avoid unnecessary compiler detection in the test-only top-level project (`LANGUAGES NONE`); fixture, integration and example projects still enable C++.
+- Increase Boost compilation parallelism from two to four jobs in the existing CI builds; leave the platform matrix, test set and all examples unchanged.
+- Update release version extraction to recognize the test-only project language change; publish the same single-file BoostPack artifact.
+
 ## 0.3.0 - 2026-11-20
 
 - Add diverse executable examples across Boost 1.89.0 and 1.92.0, header-only and compiled modules, and shared-library linking on Linux, Windows and macOS.
