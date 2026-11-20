@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(BoostPackFixture LANGUAGES CXX)
+project(BoostPackFixture LANGUAGES NONE)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 # Real CMake targets are configured before their Boost:: dependencies exist.
