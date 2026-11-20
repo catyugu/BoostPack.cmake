@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6 - 2026-11-20
+
+- Evaluate target link generator expressions separately for each configured build configuration, avoiding spurious dependencies from mutually exclusive conditions while preserving the multi-config union.
+- Reject ambiguous `TARGET_EXISTS:Boost::...` conditions rather than making a configure-time guess about modules fetched later.
+- Verify extraction completion markers against archive hashes; guard lockfile creation against concurrent writers and refuse an overwrite when another configure has created the lockfile.
+- Add offline regression fixtures for conditional dependency discovery; retain the existing public API and CI/Manual/Release workflow split.
+
 ## 0.2.5 - 2026-11-20
 
 - Prune inactive or install-only generator-expression branches before rejecting unsupported nested link expressions, while preserving diagnostics for active expressions.
