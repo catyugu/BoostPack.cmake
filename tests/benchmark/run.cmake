@@ -56,9 +56,11 @@ function(run_case label directory offline)
   if(NOT result EQUAL 0)
     message(FATAL_ERROR "${label} configure failed:\n${output}\n${error}")
   endif()
-  string(REGEX MATCH "Elapsed time \\(seconds\\): ([0-9.]+)" elapsed "${output}\n${error}")
+  # CMake 3.22 and newer releases use different -E time message formats.
+  string(REGEX MATCH "Elapsed time[^0-9]*([0-9]+([.][0-9]+)?)"
+    elapsed "${output}\n${error}")
   if(NOT elapsed)
-    message(FATAL_ERROR "Could not parse CMake -E time output: ${error}")
+    message(FATAL_ERROR "Could not parse CMake -E time output:\n${output}\n${error}")
   endif()
   set(seconds "${CMAKE_MATCH_1}")
   file(APPEND "${root}/results.csv" "${label},${seconds}\n")
