@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5 - 2026-11-20
+
+- Prune inactive or install-only generator-expression branches before rejecting unsupported nested link expressions, while preserving diagnostics for active expressions.
+- Detect upstream CMake helpers in included scripts and nested build definitions.
+- Leave legal interface dependency cycles to CMake's target graph validation.
+- Add synthetic resolver regression cases and compiled-module coverage; put assembler-heavy compatibility runs in an optional Action.
+
+
 ## 0.2.4 - 2026-11-20
 
 - Consolidate usage, source selection, lockfile semantics, limitations, examples and test instructions in the README. Correct the shared-cache requirement in the fresh offline build example.
