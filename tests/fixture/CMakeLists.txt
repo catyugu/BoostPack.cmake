@@ -170,6 +170,7 @@ elseif(TEST_CASE STREQUAL "parallel")
   endforeach()
   if(NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/archives/boost-1.92.0"
       OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download.cmake"
+      OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-build/CMakeCache.txt"
       OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_sources"
       OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_binary")
     message(FATAL_ERROR "BoostPack generated files are not grouped under _boostpack")
