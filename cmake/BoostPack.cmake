@@ -1,4 +1,4 @@
-# BoostPack.cmake v0.2.3
+# BoostPack.cmake v0.2.4
 # Copyright (c) 2026 Catyugu
 # SPDX-License-Identifier: MIT
 #
@@ -112,7 +112,7 @@ function(_boostpack_lock_initialize version repository template)
   cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL _boostpack_lock_finish)
 endfunction()
 
-function(_boostpack_archive module version url out_archive out_sha)
+function(_boostpack_archive module url out_archive out_sha)
   if(NOT url MATCHES "^(https://|file://)")
     message(FATAL_ERROR "BoostPack: archive URL must use HTTPS or file://: ${url}")
   endif()
@@ -214,11 +214,9 @@ function(_boostpack_fetch module version repository template out_source out_bina
   string(REPLACE "@VERSION@" "${version}" url "${url}")
   string(REPLACE "@TAG@" "boost-${version}" url "${url}")
 
-  _boostpack_archive("${module}" "${version}" "${url}" archive sha)
+  _boostpack_archive("${module}" "${url}" archive sha)
   string(SUBSTRING "${sha}" 0 24 short_sha)
 
-  # Isolated extraction: no FetchContent declarations, cache variables,
-  # disconnected flags, target redirects, or global FetchContent state.
   set(extract_dir "${CMAKE_BINARY_DIR}/_boostpack_sources/${module}/${short_sha}")
   get_filename_component(extract_parent "${extract_dir}" DIRECTORY)
   file(MAKE_DIRECTORY "${extract_parent}")

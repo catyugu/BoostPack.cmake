@@ -65,7 +65,7 @@ function(check_case name expected_success expected_message)
   endif()
 endfunction()
 
-check_case(create TRUE "" )
+check_case(create TRUE "")
 if(NOT EXISTS "${lock}")
   message(FATAL_ERROR "Lockfile was not written")
 endif()
@@ -82,8 +82,8 @@ foreach(module IN ITEMS foo bar support cmake)
   endif()
 endforeach()
 
-check_case(read_fresh TRUE "" )
-check_case(read_offline TRUE ""  -DBOOSTPACK_OFFLINE=ON)
+check_case(read_fresh TRUE "")
+check_case(read_offline TRUE "" -DBOOSTPACK_OFFLINE=ON)
 # Calculate the cache identity from the manifest's repository and URL template.
 set(template "@REPOSITORY@/@MODULE@/@TAG@.tar.gz")
 string(SHA256 repo_hash "${repository}\n${template}")
@@ -93,10 +93,10 @@ if(NOT EXISTS "${foo_archive}")
   message(FATAL_ERROR "Expected cached archive not found: ${foo_archive}")
 endif()
 file(RENAME "${foo_archive}" "${foo_archive}.saved")
-check_case(missing_archive FALSE "offline cache is missing"  -DBOOSTPACK_OFFLINE=ON)
-check_case(redownload TRUE "" )
+check_case(missing_archive FALSE "offline cache is missing" -DBOOSTPACK_OFFLINE=ON)
+check_case(redownload TRUE "")
 file(APPEND "${foo_archive}" "tampering")
-check_case(corrupt_archive FALSE "SHA256 mismatch for cached"  -DBOOSTPACK_OFFLINE=ON)
+check_case(corrupt_archive FALSE "SHA256 mismatch for cached" -DBOOSTPACK_OFFLINE=ON)
 file(REMOVE "${foo_archive}")
 file(RENAME "${foo_archive}.saved" "${foo_archive}")
 
@@ -108,15 +108,12 @@ check_case(repository_mismatch FALSE "repository mismatch"
 string(JSON reduced REMOVE "${data}" modules bar)
 file(WRITE "${root}/missing.lock.json" "${reduced}\n")
 set(lock "${root}/missing.lock.json")
-check_case(missing_module FALSE "module 'bar' is missing from the lockfile"
-  )
+check_case(missing_module FALSE "module 'bar' is missing from the lockfile")
 
 file(WRITE "${root}/malformed.lock.json" "this is not JSON\n")
 set(lock "${root}/malformed.lock.json")
-check_case(malformed FALSE "invalid lockfile schema"
-  )
+check_case(malformed FALSE "invalid lockfile schema")
 
-set(lock "${root}/boostpack.lock.json")
 # New lockfiles must be created online; archived sources may be reused offline.
 set(lock "${root}/nonexistent.lock.json")
 check_case(offline_new_lock FALSE "cannot create lockfile while offline"
@@ -130,8 +127,6 @@ check_case(insecure_source FALSE "archive URL must use HTTPS or file://"
 string(JSON extra SET "${data}" modules extra "{\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"url\":\"file:///invalid\"}")
 file(WRITE "${root}/extra.lock.json" "${extra}\n")
 set(lock "${root}/extra.lock.json")
-check_case(extra_entry FALSE "dependency closure mismatch" )
-set(lock "${root}/boostpack.lock.json")
-
+check_case(extra_entry FALSE "dependency closure mismatch")
 
 message(STATUS "Lockfile, multi-call closure, offline and archive corruption tests passed")

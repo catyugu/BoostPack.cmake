@@ -1,11 +1,17 @@
 # Changelog
 
+## 0.2.4 - 2026-11-20
+
+- Consolidate usage, source selection, lockfile semantics, limitations, examples and test instructions in the README. Correct the shared-cache requirement in the fresh offline build example.
+- Remove duplicated contributor documentation and clarify that the resolver benchmark runs only through a separately dispatched GitHub Action.
+- Drop an unused internal archive parameter, duplicate comments and redundant test-fixture list construction. Public API and dependency resolution behavior are unchanged.
+
+
 ## 0.2.3 - 2026-11-20
 
 - Resolve conditional Boost target links by evaluating nested generator expressions before dependency discovery. Skip inactive and install-only branches instead of speculatively downloading modules.
 - Preserve the union of required targets for multi-config generators and diagnose unsupported link expressions rather than silently guessing.
 - Add cross-platform regression cases for conditional dependencies and an offline, reproducible cold/warm/reconfigure benchmark with 24 synthetic Boost modules.
-
 
 ## 0.2.2 - 2026-11-20
 
@@ -21,7 +27,6 @@
 - Load the upstream `boostorg/cmake` support files from the selected release on demand for modules requiring `boost_install` or related helpers; preserve the single-file consumer API.
 - Add offline regression coverage for configured dependency discovery and upstream support, and extend real Boost integration to Asio, Filesystem, Regex, Stacktrace and Thread.
 - Separate CI from release publication: only `v*` tag builds publish, after full test validation and tag/version/`main` ancestry checks.
-
 
 ## 0.2.0 - 2026-11-20 (corrected release)
 
