@@ -1,0 +1,48 @@
+name: Examples
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  examples:
+    name: Examples / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .boostpack-cache
+          key: boostpack-ci-${{ runner.os }}-1.89-1.92
+      - name: Set C++ build parallelism to 1.5x available cores
+        shell: bash
+        run: |
+          if [[ -n "${NUMBER_OF_PROCESSORS:-}" ]]; then
+            cores="$NUMBER_OF_PROCESSORS"
+          elif command -v nproc >/dev/null 2>&1; then
+            cores="$(nproc)"
+          else
+            cores="$(sysctl -n hw.logicalcpu)"
+          fi
+          jobs=$(( (cores * 3 + 1) / 2 ))
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >> "$GITHUB_ENV"
+          echo "Build parallelism: $jobs jobs on $cores logical cores"
+      - name: Build and run every example
+        shell: bash
+        run: |
+          set -euo pipefail
+          for project in examples/*/CMakeLists.txt; do
+            directory="${project%/CMakeLists.txt}"
+            name="${directory##*/}"
+            cmake -S "$directory" -B "build/examples/$name" \
+              -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
+            cmake --build "build/examples/$name" --config Release
+            ctest --test-dir "build/examples/$name" -C Release --output-on-failure
+          done
