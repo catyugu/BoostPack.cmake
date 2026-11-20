@@ -31,19 +31,7 @@ jobs:
         with:
           path: .boostpack-cache
           key: boostpack-ci-${{ runner.os }}-1.89-1.92
-      - name: Set C++ build parallelism to 1.5x available cores
-        shell: bash
-        run: |
-          if [[ -n "${NUMBER_OF_PROCESSORS:-}" ]]; then
-            cores="$NUMBER_OF_PROCESSORS"
-          elif command -v nproc >/dev/null 2>&1; then
-            cores="$(nproc)"
-          else
-            cores="$(sysctl -n hw.logicalcpu)"
-          fi
-          jobs=$(( (cores * 3 + 1) / 2 ))
-          echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >> "$GITHUB_ENV"
-          echo "Build parallelism: $jobs jobs on $cores logical cores"
+      - uses: ./.github/actions/build-parallelism
       - name: Configure and run unit tests
         shell: bash
         run: |
