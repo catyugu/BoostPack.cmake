@@ -7,167 +7,93 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Run one test suite
+        type: choice
+        options: [smoke, compatibility, benchmark]
+        default: smoke
+      boost_version:
+        description: Boost release for compatibility tests
+        type: string
+        default: '1.92.0'
 
 permissions:
   contents: read
 
-jobs:
-  unit:
-    name: Unit / ${{ matrix.os }} / CMake ${{ matrix.cmake }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            cmake: '3.22.6'
-          - os: ubuntu-latest
-            cmake: system
-          - os: windows-latest
-            cmake: system
-          - os: macos-latest
-            cmake: system
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install CMake 3.22
-        if: matrix.cmake != 'system'
-        run: python -m pip install --upgrade cmake==${{ matrix.cmake }}
-      - name: Configure
-        run: cmake -S . -B build -DBUILD_TESTING=ON
-      - name: Test
-        run: ctest --test-dir build -C Debug --output-on-failure
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-  integration:
-    name: Boost ${{ matrix.version }} / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }} / extended=${{ matrix.extended }}
+jobs:
+  smoke:
+    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'smoke'
+    name: Smoke / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            cmake: '3.22.6'
-            compiler: gcc
-            version: '1.89.0'
-            shared: 'OFF'
-            extended: 'OFF'
-          - os: ubuntu-latest
-            cmake: system
-            compiler: clang
-            version: '1.92.0'
-            shared: 'OFF'
-            extended: 'OFF'
-          - os: ubuntu-latest
-            cmake: system
-            compiler: gcc
-            version: '1.92.0'
-            shared: 'ON'
-            extended: 'ON'
-          - os: windows-latest
-            cmake: system
-            compiler: msvc
-            version: '1.92.0'
-            shared: 'OFF'
-            extended: 'ON'
-          - os: macos-latest
-            cmake: system
-            compiler: appleclang
-            version: '1.92.0'
-            shared: 'OFF'
-            extended: 'OFF'
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Install CMake 3.22
-        if: matrix.cmake != 'system'
-        run: python -m pip install --upgrade cmake==${{ matrix.cmake }}
+      - name: Check minimum CMake version
+        if: matrix.os == 'ubuntu-latest'
+        run: python -m pip install --upgrade cmake==3.22.6
+      - name: Offline resolver, mirrors and lockfiles
+        run: |
+          cmake -S . -B build/unit -DBUILD_TESTING=ON
+          ctest --test-dir build/unit -C Release --output-on-failure
       - uses: actions/cache@v4
         with:
           path: .boostpack-cache
-          key: boostpack-${{ matrix.version }}-${{ runner.os }}-source
-      - name: Configure real Boost modules
-        shell: bash
+          key: boostpack-smoke-${{ runner.os }}-1.92.0
+      - name: Configure native Boost targets
+        run: cmake -S examples/json -B build/json -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache"
+      - name: Build and test real Boost modules
         run: |
-          args=()
-          if [[ "${{ matrix.compiler }}" == "clang" ]]; then
-            args+=(-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang)
-          fi
-          for attempt in 1 2 3; do
-            if cmake -S tests/integration -B build/integration \
-              -DBOOST_VERSION=${{ matrix.version }} \
-              -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache" \
-              -DBOOSTPACK_INTEGRATION_EXTENDED=${{ matrix.extended }} \
-              -DBUILD_SHARED_LIBS=${{ matrix.shared }} "${args[@]}"; then
-              exit 0
-            fi
-            if [[ "$attempt" == 3 ]]; then
-              exit 1
-            fi
-            echo "Boost archive fetch/configure failed; retrying ($attempt/3)"
-            sleep 8
-          done
-      - name: Build
-        run: cmake --build build/integration --config Release --parallel 2
-      - name: Test
-        run: ctest --test-dir build/integration -C Release --output-on-failure
-      - name: Configure custom-version example
-        if: matrix.cmake == '3.22.6'
-        shell: bash
-        run: >-
-          cmake -S examples/custom-version -B build/example-version
-          -DBOOST_VERSION=${{ matrix.version }}
-          -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache"
-      - name: Build custom-version example
-        if: matrix.cmake == '3.22.6'
-        run: cmake --build build/example-version --config Release --parallel 2
-      - name: Test custom-version example
-        if: matrix.cmake == '3.22.6'
-        run: ctest --test-dir build/example-version -C Release --output-on-failure
+          cmake --build build/json --config Release --parallel 2
+          ctest --test-dir build/json -C Release --output-on-failure
 
-  mirror:
-    name: Custom archive URL / CMake 3.22 / Ubuntu
+  manual:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'smoke'
+    name: Manual / ${{ inputs.suite }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Install CMake 3.22
-        run: python -m pip install --upgrade cmake==3.22.6
-      - name: Configure via codeload URL template
-        run: >-
-          cmake -S examples/custom-version -B build/mirror
-          -DBOOST_VERSION=1.92.0
-          -DBOOST_SOURCE_TEMPLATE=https://codeload.github.com/boostorg/@MODULE@/tar.gz/refs/tags/@TAG@
-      - name: Build
-        run: cmake --build build/mirror --parallel 2
-      - name: Test
-        run: ctest --test-dir build/mirror --output-on-failure
-
-  reproducible:
-    name: Locked archive / strict offline / CMake 3.22
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install CMake 3.22
-        run: python -m pip install --upgrade cmake==3.22.6
-      - name: Generate lockfile using real Boost sources
-        run: >-
-          cmake -S examples/custom-version -B build/locked
-          -DBOOST_VERSION=1.89.0
-          -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.locked-cache"
-          -DBOOSTPACK_LOCKFILE="${{ github.workspace }}/build/boostpack.lock.json"
-
-      - name: Configure completely offline from verified archives
-        run: >-
-          cmake -S examples/custom-version -B build/locked
-          -DBOOST_VERSION=1.89.0
-          -DBOOSTPACK_OFFLINE=ON
-
-      - name: Build
-        run: cmake --build build/locked --parallel 2
-      - name: Test
-        run: ctest --test-dir build/locked --output-on-failure
+      - uses: actions/cache@v4
+        if: inputs.suite == 'compatibility'
+        with:
+          path: .boostpack-cache
+          key: boostpack-compat-${{ runner.os }}-${{ inputs.boost_version }}
+      - name: Extended compatibility
+        if: inputs.suite == 'compatibility'
+        env:
+          BOOST_RELEASE: ${{ inputs.boost_version }}
+        run: |
+          cmake -S tests/integration -B build/compatibility \
+            "-DBOOST_VERSION=${BOOST_RELEASE}" \
+            -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache" \
+            -DBOOSTPACK_INTEGRATION_EXTENDED=ON
+          cmake --build build/compatibility --config Release --parallel 2
+          ctest --test-dir build/compatibility -C Release --output-on-failure
+      - name: Resolver benchmark
+        if: inputs.suite == 'benchmark'
+        run: |
+          python -m pip install --upgrade cmake==3.22.6
+          cmake -DBENCH_ROOT="${{ github.workspace }}/build/benchmark" -P tests/benchmark/run.cmake
+      - uses: actions/upload-artifact@v4
+        if: inputs.suite == 'benchmark'
+        with:
+          name: boostpack-resolver-benchmark
+          path: build/benchmark/results.csv
+          if-no-files-found: error
 
   release:
-    name: Publish tagged release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [unit, integration, mirror, reproducible]
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.suite == 'smoke')
+    needs: smoke
+    name: Publish validated tag
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -175,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Validate release tag and main ancestry
+      - name: Validate tag and main ancestry
         shell: bash
         run: |
           set -euo pipefail

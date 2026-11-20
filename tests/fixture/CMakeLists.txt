@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 # Real CMake targets are configured before their Boost:: dependencies exist.
 # Verify that discovery follows the configured graph, including nested files,
 # variable expansion, platform conditions and optional target expressions.
-set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support genex genex_bad missing_target)
+set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support nested_support genex genex_inactive_unknown genex_bad genex_bad_condition missing_target)
 foreach(module IN LISTS fake_modules)
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/source/${module}")
   file(MAKE_DIRECTORY "${dir}")
@@ -58,13 +58,33 @@ foreach(module IN LISTS fake_modules)
       "  \"$<IF:$<CONFIG:Debug>,Boost::other,Boost::headers>\"\n"
       "  \"$<IF:$<PLATFORM_ID:${CMAKE_SYSTEM_NAME}>,Boost::config,Boost::ghost_platform>\"\n"
       ")\n")
+  elseif(module STREQUAL "genex_inactive_unknown")
+    string(APPEND definition
+      "target_link_libraries(boost_genex_inactive_unknown INTERFACE\n"
+      "  \"$<IF:$<BOOL:1>,Boost::bar,$<JOIN:Boost::ghost_else,_>>\"\n"
+      "  \"$<IF:$<AND:0,$<BOOL:$<JOIN:Boost::ghost_cond,_>>>,Boost::ghost_true,Boost::headers>\"\n"
+      "  \"$<INSTALL_INTERFACE:$<JOIN:Boost::ghost_install,_>>\"\n"
+      "  \"$<0:$<JOIN:Boost::ghost_zero,_>>\"\n"
+      ")\n")
   elseif(module STREQUAL "genex_bad")
     string(APPEND definition
       "target_link_libraries(boost_genex_bad INTERFACE \"$<JOIN:Boost::bar,->\")\n")
+  elseif(module STREQUAL "genex_bad_condition")
+    string(APPEND definition
+      "target_link_libraries(boost_genex_bad_condition INTERFACE \"$<IF:$<BOOL:$<JOIN:1,_>>,Boost::bar,Boost::headers>\")\n")
   elseif(module STREQUAL "support")
     string(APPEND definition
       "target_link_libraries(boost_support INTERFACE Boost::config)\n"
       "boost_install(TARGETS boost_support VERSION \${BOOST_SUPERPROJECT_VERSION})\n")
+  elseif(module STREQUAL "nested_support")
+    file(MAKE_DIRECTORY "${dir}/cmake" "${dir}/impl")
+    file(WRITE "${dir}/cmake/helpers.cmake"
+      "boost_install(TARGETS boost_nested_support VERSION \${BOOST_SUPERPROJECT_VERSION})\n")
+    file(WRITE "${dir}/impl/CMakeLists.txt"
+      "include(BoostInstall)\n")
+    string(APPEND definition
+      "include(${dir}/cmake/helpers.cmake)\n"
+      "add_subdirectory(impl)\n")
   endif()
   file(WRITE "${dir}/CMakeLists.txt" "${definition}")
 endforeach()
@@ -186,6 +206,12 @@ elseif(TEST_CASE STREQUAL "support")
   if(NOT calls STREQUAL yes OR NOT TARGET Boost::config)
     message(FATAL_ERROR "Upstream support was not initialized")
   endif()
+elseif(TEST_CASE STREQUAL "nested_support")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS nested_support)
+  get_property(calls GLOBAL PROPERTY BOOSTPACK_TEST_SUPPORT_CALLED)
+  if(NOT calls STREQUAL yes OR NOT TARGET Boost::nested_support)
+    message(FATAL_ERROR "Nested upstream CMake helpers were not initialized: ${calls}")
+  endif()
 elseif(TEST_CASE STREQUAL "genex")
   _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex)
   foreach(expected IN ITEMS genex bar config headers pfr)
@@ -213,8 +239,22 @@ elseif(TEST_CASE STREQUAL "genex")
   elseif(NOT expect_debug AND TARGET Boost::other)
     message(FATAL_ERROR "Inactive Debug-only dependency was downloaded")
   endif()
+elseif(TEST_CASE STREQUAL "genex_inactive_unknown")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_inactive_unknown)
+  foreach(expected IN ITEMS genex_inactive_unknown bar config headers)
+    if(NOT TARGET Boost::${expected})
+      message(FATAL_ERROR "Missing dependency after inactive genex pruning: ${expected}")
+    endif()
+  endforeach()
+  foreach(unwanted IN ITEMS ghost_else ghost_cond ghost_true ghost_install ghost_zero)
+    if(TARGET Boost::${unwanted})
+      message(FATAL_ERROR "Inactive genex over-fetched Boost::${unwanted}")
+    endif()
+  endforeach()
 elseif(TEST_CASE STREQUAL "genex_bad")
   _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_bad)
+elseif(TEST_CASE STREQUAL "genex_bad_condition")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_bad_condition)
 elseif(TEST_CASE STREQUAL "collision")
   add_library(foreign_bar INTERFACE)
   add_library(Boost::bar ALIAS foreign_bar)
@@ -232,6 +272,9 @@ elseif(TEST_CASE STREQUAL "template_conflict")
     COMPONENTS foo)
 elseif(TEST_CASE STREQUAL "cycle")
   _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS foo)
+  if(NOT TARGET Boost::bar OR NOT TARGET Boost::foo)
+    message(FATAL_ERROR "Interface dependency cycle lost a target")
+  endif()
 elseif(TEST_CASE STREQUAL "missing_offline")
   set(BOOSTPACK_OFFLINE ON)
   _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS foo)
