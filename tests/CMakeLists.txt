@@ -1,5 +1,5 @@
 foreach(case IN ITEMS
-    minimal closure incremental reinclude repository template
+    minimal closure parallel incremental reinclude repository template
     conditional included dynamic nested optional support nested_support
     genex genex_inactive_unknown genex_bad genex_bad_condition genex_config_exclusive genex_target_exists
     collision version_conflict repository_conflict template_conflict cycle
