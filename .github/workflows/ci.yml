@@ -38,7 +38,7 @@ jobs:
         run: ctest --test-dir build -C Debug --output-on-failure
 
   integration:
-    name: Boost ${{ matrix.version }} / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }} / extended=${{ matrix.extended }}
+    name: Boost ${{ matrix.version }} / ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.cmake }} / shared=${{ matrix.shared }} / extended=${{ matrix.extended }} / deep=${{ matrix.deep }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -50,30 +50,35 @@ jobs:
             version: '1.89.0'
             shared: 'OFF'
             extended: 'OFF'
+            deep: 'OFF'
           - os: ubuntu-latest
             cmake: system
             compiler: clang
             version: '1.92.0'
             shared: 'OFF'
             extended: 'OFF'
+            deep: 'OFF'
           - os: ubuntu-latest
             cmake: system
             compiler: gcc
             version: '1.92.0'
             shared: 'ON'
             extended: 'ON'
+            deep: 'ON'
           - os: windows-latest
             cmake: system
             compiler: msvc
             version: '1.92.0'
             shared: 'OFF'
             extended: 'ON'
+            deep: 'OFF'
           - os: macos-latest
             cmake: system
             compiler: appleclang
             version: '1.92.0'
             shared: 'OFF'
             extended: 'OFF'
+            deep: 'OFF'
     steps:
       - uses: actions/checkout@v4
       - name: Install CMake 3.22
@@ -95,6 +100,7 @@ jobs:
               -DBOOST_VERSION=${{ matrix.version }} \
               -DBOOSTPACK_CACHE_DIR="${GITHUB_WORKSPACE}/.boostpack-cache" \
               -DBOOSTPACK_INTEGRATION_EXTENDED=${{ matrix.extended }} \
+              -DBOOSTPACK_INTEGRATION_DEEP=${{ matrix.deep }} \
               -DBUILD_SHARED_LIBS=${{ matrix.shared }} "${args[@]}"; then
               exit 0
             fi
