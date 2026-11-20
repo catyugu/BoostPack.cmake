@@ -98,7 +98,10 @@ The resolver covers dependencies expressed through CMake target link properties.
 
 - [`examples/minimal`](examples/minimal): single header-only PFR module.
 - [`examples/json`](examples/json): JSON and URL libraries with transitive dependencies.
-- [`examples/custom-version`](examples/custom-version): select a Boost release, repository mirror or URL template using the example's `BOOST_VERSION`, `BOOST_MIRROR` and `BOOST_SOURCE_TEMPLATE` options.
+- [`examples/custom-version`](examples/custom-version): Boost 1.89 with PFR, MP11 and Describe, plus optional mirror and archive-template selection.
+- [`examples/cli-report`](examples/cli-report): compiled Program_options, Filesystem and Serialization plus Regex; exercises shared libraries and a deterministic file-report round trip.
+
+The examples are intentionally varied: different Boost releases, C++ language levels, header-only and compiled targets, default and shared linking, and optional source mirrors. CI reuses its existing three OS jobs to build and run every example; no additional CI matrix or synthetic tests are needed for this coverage.
 
 Run the synthetic, offline-capable unit tests:
 

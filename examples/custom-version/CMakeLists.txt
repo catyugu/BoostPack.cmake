@@ -11,11 +11,11 @@ if(BOOST_SOURCE_TEMPLATE)
   list(APPEND archive_args URL_TEMPLATE "${BOOST_SOURCE_TEMPLATE}")
 endif()
 boostpack_add(VERSION "${BOOST_VERSION}" REPOSITORY "${BOOST_MIRROR}"
-  ${archive_args} COMPONENTS pfr mp11)
+  ${archive_args} COMPONENTS pfr mp11 describe)
 
 add_executable(example_custom_version main.cpp)
 target_compile_features(example_custom_version PRIVATE cxx_std_17)
-target_link_libraries(example_custom_version PRIVATE Boost::pfr Boost::mp11)
+target_link_libraries(example_custom_version PRIVATE Boost::pfr Boost::mp11 Boost::describe)
 if(BUILD_TESTING)
   add_test(NAME custom_version_example COMMAND example_custom_version)
 endif()
