@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 # Real CMake targets are configured before their Boost:: dependencies exist.
 # Verify that discovery follows the configured graph, including nested files,
 # variable expansion, platform conditions and optional target expressions.
-set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support nested_support genex genex_inactive_unknown genex_bad genex_bad_condition missing_target)
+set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support nested_support genex genex_inactive_unknown genex_bad genex_bad_condition genex_config_union genex_config_exclusive genex_target_exists missing_target)
 foreach(module IN LISTS fake_modules)
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/source/${module}")
   file(MAKE_DIRECTORY "${dir}")
@@ -66,6 +66,15 @@ foreach(module IN LISTS fake_modules)
       "  \"$<INSTALL_INTERFACE:$<JOIN:Boost::ghost_install,_>>\"\n"
       "  \"$<0:$<JOIN:Boost::ghost_zero,_>>\"\n"
       ")\n")
+  elseif(module STREQUAL "genex_config_union")
+    string(APPEND definition
+      "target_link_libraries(boost_genex_config_union INTERFACE \"$<IF:$<CONFIG:Debug>,Boost::bar,Boost::headers>\")\n")
+  elseif(module STREQUAL "genex_config_exclusive")
+    string(APPEND definition
+      "target_link_libraries(boost_genex_config_exclusive INTERFACE \"$<IF:$<AND:$<CONFIG:Debug>,$<CONFIG:Release>>,Boost::ghost,Boost::bar>\")\n")
+  elseif(module STREQUAL "genex_target_exists")
+    string(APPEND definition
+      "target_link_libraries(boost_genex_target_exists INTERFACE \"$<IF:$<TARGET_EXISTS:Boost::bar>,Boost::bar,Boost::headers>\")\n")
   elseif(module STREQUAL "genex_bad")
     string(APPEND definition
       "target_link_libraries(boost_genex_bad INTERFACE \"$<JOIN:Boost::bar,->\")\n")
@@ -251,6 +260,20 @@ elseif(TEST_CASE STREQUAL "genex_inactive_unknown")
       message(FATAL_ERROR "Inactive genex over-fetched Boost::${unwanted}")
     endif()
   endforeach()
+elseif(TEST_CASE STREQUAL "genex_config_union")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_config_union)
+  if(CMAKE_CONFIGURATION_TYPES)
+    if(NOT TARGET Boost::bar OR NOT TARGET Boost::headers)
+      message(FATAL_ERROR "Multi-config dependency union was not resolved")
+    endif()
+  endif()
+elseif(TEST_CASE STREQUAL "genex_config_exclusive")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_config_exclusive)
+  if(TARGET Boost::ghost OR NOT TARGET Boost::bar)
+    message(FATAL_ERROR "Mutually exclusive configurations over-fetched modules")
+  endif()
+elseif(TEST_CASE STREQUAL "genex_target_exists")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_target_exists)
 elseif(TEST_CASE STREQUAL "genex_bad")
   _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_bad)
 elseif(TEST_CASE STREQUAL "genex_bad_condition")

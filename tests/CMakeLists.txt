@@ -1,7 +1,7 @@
 foreach(case IN ITEMS
     minimal closure incremental reinclude repository template
     conditional included dynamic nested optional support nested_support
-    genex genex_inactive_unknown genex_bad genex_bad_condition
+    genex genex_inactive_unknown genex_bad genex_bad_condition genex_config_exclusive genex_target_exists
     collision version_conflict repository_conflict template_conflict cycle
     missing_offline bad_module bad_version bad_template missing_arguments missing_target)
   add_test(NAME configure_${case}
@@ -9,7 +9,14 @@ foreach(case IN ITEMS
       -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
       -B "${CMAKE_CURRENT_BINARY_DIR}/cases/${case}"
       "-DTEST_CASE=${case}")
-  if(case MATCHES "^(genex_bad|genex_bad_condition|collision|version_conflict|repository_conflict|template_conflict|missing_offline|bad_module|bad_version|bad_template|missing_arguments|missing_target)$")
+  if(case STREQUAL "genex_config_exclusive")
+    add_test(NAME configure_genex_config_union
+      COMMAND "${CMAKE_COMMAND}" -G "Ninja Multi-Config"
+        -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
+        -B "${CMAKE_CURRENT_BINARY_DIR}/cases/genex_config_union"
+        "-DTEST_CASE=genex_config_union")
+  endif()
+  if(case MATCHES "^(genex_target_exists|genex_bad|genex_bad_condition|collision|version_conflict|repository_conflict|template_conflict|missing_offline|bad_module|bad_version|bad_template|missing_arguments|missing_target)$")
     set_tests_properties(configure_${case} PROPERTIES WILL_FAIL TRUE)
   endif()
 endforeach()
