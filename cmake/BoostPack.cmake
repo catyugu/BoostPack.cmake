@@ -1,4 +1,4 @@
-# BoostPack.cmake v0.3.1
+# BoostPack.cmake v0.3.2
 # Copyright (c) 2026 Catyugu
 # SPDX-License-Identifier: MIT
 #
@@ -137,7 +137,7 @@ endfunction()
 
 function(_boostpack_download module url archive expected)
   if(NOT url MATCHES "^(https://|file://)")
-    message(FATAL_ERROR "BoostPack: archive URL must use HTTPS or file://: ${url}")
+    _boostpack_download_abort("BoostPack: archive URL must use HTTPS or file://: ${url}")
   endif()
   if(EXISTS "${archive}")
     return()
@@ -146,13 +146,13 @@ function(_boostpack_download module url archive expected)
   file(MAKE_DIRECTORY "${archive_dir}")
   file(LOCK "${archive}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
   if(NOT lock_result STREQUAL "0")
-    message(FATAL_ERROR "BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
+    _boostpack_download_abort("BoostPack: cannot lock cached archive for '${module}': ${lock_result}")
   endif()
   if(EXISTS "${archive}")
     return()
   endif()
   if(BOOSTPACK_OFFLINE)
-    message(FATAL_ERROR "BoostPack: offline cache is missing the archive for '${module}': ${archive}")
+    _boostpack_download_abort("BoostPack: offline cache is missing the archive for '${module}': ${archive}")
   endif()
 
   # Skip GitHub's archive redirect without changing the canonical lockfile URL.
@@ -167,13 +167,13 @@ function(_boostpack_download module url archive expected)
   list(GET status 1 detail)
   if(NOT code EQUAL 0)
     file(REMOVE "${archive}.partial")
-    message(FATAL_ERROR "BoostPack: failed to download '${module}' from '${url}': ${detail}\n${log}")
+    _boostpack_download_abort("BoostPack: failed to download '${module}' from '${url}': ${detail}\n${log}")
   endif()
   if(expected)
     file(SHA256 "${archive}.partial" downloaded_sha)
     if(NOT downloaded_sha STREQUAL expected)
       file(REMOVE "${archive}.partial")
-      message(FATAL_ERROR "BoostPack: SHA256 mismatch for downloaded '${module}' from '${url}'")
+      _boostpack_download_abort("BoostPack: SHA256 mismatch for downloaded '${module}' from '${url}'")
     endif()
   endif()
   file(RENAME "${archive}.partial" "${archive}")
@@ -246,107 +246,99 @@ function(_boostpack_module_url module version repository template out_url)
   set(${out_url} "${url}" PARENT_SCOPE)
 endfunction()
 
-# Download each dependency frontier concurrently, then let the normal
-# add_subdirectory()/target inspection determine the next frontier.
-# execute_process() pipelines start all COMMAND processes concurrently on
-# CMake 3.22+, so no shell or third-party download utility is required.
-# Download independent modules with a tiny generated CMake project.  CMake
-# 3.22's execute_process(COMMAND ... COMMAND ...) is a PIPELINE (not a process
-# pool): download-worker stdout can close the next worker's stdin (SIGPIPE).
-# Native build targets give each download its own process and independent IO.
-function(_boostpack_prefetch modules version repository template)
-  if(BOOSTPACK_OFFLINE)
-    return()
+
+# The standalone file is also the worker entry point; no generated scripts or
+# job argument files. One ephemeral status file per in-flight archive is enough.
+function(_boostpack_worker_result result)
+  if(DEFINED _BOOSTPACK_WORKER_STATUS)
+    file(WRITE "${_BOOSTPACK_WORKER_STATUS}.partial" "${result}\n")
+    file(RENAME "${_BOOSTPACK_WORKER_STATUS}.partial" "${_BOOSTPACK_WORKER_STATUS}")
   endif()
-  get_property(loaded GLOBAL PROPERTY BOOSTPACK_MODULES)
-  set(pending "")
-  foreach(module IN LISTS modules)
-    if(module IN_LIST loaded OR TARGET Boost::${module}
-        OR EXISTS "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
-      continue()
-    endif()
-    list(APPEND pending "${module}")
-  endforeach()
-  list(REMOVE_DUPLICATES pending)
-  list(LENGTH pending count)
-  if(count LESS 2)
-    return()
-  endif()
+endfunction()
 
-  set(root "${CMAKE_BINARY_DIR}/_boostpack")
-  set(worker "${root}/download.cmake")
-  set(project_dir "${root}/download-project")
-  set(binary_dir "${root}/download-build")
-  set(job_dir "${root}/download-jobs")
-  file(MAKE_DIRECTORY "${project_dir}" "${job_dir}")
-  file(WRITE "${worker}" [=[
-include("${BOOSTPACK_MODULE_FILE}")
-include("${BP_JOB_FILE}")
-_boostpack_download("${BP_MODULE}" "${BP_URL}" "${BP_ARCHIVE}" "${BP_EXPECTED}")
-]=])
+function(_boostpack_download_abort reason)
+  _boostpack_worker_result("ERROR: ${reason}")
+  message(FATAL_ERROR "${reason}")
+endfunction()
 
-  message(STATUS "BoostPack: downloading ${count} modules in parallel")
-  while(pending)
-    list(LENGTH pending count)
-    set(batch_size ${count})
-    if(batch_size GREATER 8)
-      set(batch_size 8)
-    endif()
-    list(SUBLIST pending 0 ${batch_size} batch)
-    if(batch_size EQUAL count)
-      set(pending "")
-    else()
-      list(SUBLIST pending ${batch_size} -1 pending)
-    endif()
+function(_boostpack_shell_quote out value)
+  string(REPLACE "'" "'\\''" quoted "${value}")
+  set(${out} "'${quoted}'" PARENT_SCOPE)
+endfunction()
 
-    set(project "cmake_minimum_required(VERSION 3.22)\nproject(BoostPackDownloads LANGUAGES NONE)\n")
-    set(targets "")
-    foreach(module IN LISTS batch)
-      _boostpack_module_url("${module}" "${version}" "${repository}" "${template}" url)
-      _boostpack_expected("${module}" "${url}" expected)
-      _boostpack_json_string(module_value "${module}")
-      _boostpack_json_string(url_value "${url}")
-      _boostpack_json_string(archive_value "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
-      _boostpack_json_string(expected_value "${expected}")
-      file(WRITE "${job_dir}/${module}.cmake"
-        "set(BP_MODULE ${module_value})\n"
-        "set(BP_URL ${url_value})\n"
-        "set(BP_ARCHIVE ${archive_value})\n"
-        "set(BP_EXPECTED ${expected_value})\n")
-      string(APPEND project
-        "add_custom_target(boostpack_fetch_${module}\n"
-        "  COMMAND \"${CMAKE_COMMAND}\"\n"
-        "    \"-DBOOSTPACK_MODULE_FILE=${CMAKE_CURRENT_FUNCTION_LIST_FILE}\"\n"
-        "    \"-DBP_JOB_FILE=${job_dir}/${module}.cmake\"\n"
-        "    -P \"${worker}\" VERBATIM)\n")
-      list(APPEND targets "boostpack_fetch_${module}")
+function(_boostpack_ps_quote out value)
+  string(REPLACE "'" "''" quoted "${value}")
+  set(${out} "'${quoted}'" PARENT_SCOPE)
+endfunction()
+
+function(_boostpack_start_download module version repository template)
+  _boostpack_module_url("${module}" "${version}" "${repository}" "${template}" url)
+  _boostpack_expected("${module}" "${url}" expected)
+  set(status "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/${module}.status")
+  get_filename_component(dir "${status}" DIRECTORY)
+  file(MAKE_DIRECTORY "${dir}")
+  file(WRITE "${status}" "RUNNING\n")
+
+  set(args
+    "-D_BOOSTPACK_WORKER_MODULE=${module}"
+    "-D_BOOSTPACK_WORKER_URL=${url}"
+    "-D_BOOSTPACK_WORKER_ARCHIVE=${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz"
+    "-D_BOOSTPACK_WORKER_EXPECTED=${expected}"
+    "-D_BOOSTPACK_WORKER_STATUS=${status}"
+    "-P" "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
+
+  if(CMAKE_HOST_WIN32)
+    _boostpack_ps_quote(cmake_arg "${CMAKE_COMMAND}")
+    set(ps_args "")
+    foreach(arg IN LISTS args)
+      # Start-Process joins arguments as a Windows command line; embedded
+      # double quotes keep paths with spaces intact.
+      _boostpack_ps_quote(escaped "\"${arg}\"")
+      list(APPEND ps_args "${escaped}")
     endforeach()
-    string(REPLACE ";" " " targets "${targets}")
-    string(APPEND project "add_custom_target(boostpack_downloads ALL DEPENDS ${targets})\n")
-    file(WRITE "${project_dir}/CMakeLists.txt" "${project}")
+    string(JOIN ", " ps_args ${ps_args})
+    execute_process(COMMAND powershell.exe -NoProfile -NonInteractive -Command
+      "$ErrorActionPreference='Stop'; Start-Process -FilePath ${cmake_arg} -ArgumentList @(${ps_args}) -WindowStyle Hidden"
+      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 15)
+  else()
+    _boostpack_shell_quote(cmake_arg "${CMAKE_COMMAND}")
+    set(command "${cmake_arg}")
+    foreach(arg IN LISTS args)
+      _boostpack_shell_quote(escaped "${arg}")
+      string(APPEND command " ${escaped}")
+    endforeach()
+    execute_process(COMMAND /bin/sh -c
+      "${command} </dev/null >/dev/null 2>&1 &"
+      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 15)
+  endif()
+  if(NOT result STREQUAL "0")
+    message(FATAL_ERROR
+      "BoostPack: failed starting download of '${module}': ${error}\n${output}")
+  endif()
+  message(STATUS "BoostPack: started download of ${module}")
+endfunction()
 
-    set(configure "${CMAKE_COMMAND}" -S "${project_dir}" -B "${binary_dir}" -G "${CMAKE_GENERATOR}")
-    if(CMAKE_GENERATOR_PLATFORM)
-      list(APPEND configure -A "${CMAKE_GENERATOR_PLATFORM}")
+function(_boostpack_reap_downloads active out_active)
+  set(remaining "")
+  foreach(module IN LISTS active)
+    set(status "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/${module}.status")
+    if(NOT EXISTS "${status}")
+      message(FATAL_ERROR "BoostPack: worker status missing for '${module}'")
     endif()
-    if(CMAKE_GENERATOR_TOOLSET)
-      list(APPEND configure -T "${CMAKE_GENERATOR_TOOLSET}")
+    file(READ "${status}" result)
+    string(STRIP "${result}" result)
+    if(result STREQUAL "RUNNING")
+      list(APPEND remaining "${module}")
+    elseif(result STREQUAL "OK")
+      if(NOT EXISTS "${_BOOSTPACK_ARCHIVE_CACHE}/${module}.tar.gz")
+        message(FATAL_ERROR "BoostPack: download of '${module}' finished without an archive")
+      endif()
+      file(REMOVE "${status}")
+    else()
+      message(FATAL_ERROR "BoostPack: download of '${module}' failed:\n${result}")
     endif()
-    if(CMAKE_MAKE_PROGRAM)
-      list(APPEND configure "-DCMAKE_MAKE_PROGRAM:FILEPATH=${CMAKE_MAKE_PROGRAM}")
-    endif()
-    execute_process(COMMAND ${configure}
-      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 120)
-    if(NOT result STREQUAL "0")
-      message(FATAL_ERROR "BoostPack: download project configuration failed:\n${output}\n${errors}")
-    endif()
-    execute_process(
-      COMMAND "${CMAKE_COMMAND}" --build "${binary_dir}" --config Release --parallel ${batch_size}
-      RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors TIMEOUT 600)
-    if(NOT result STREQUAL "0")
-      message(FATAL_ERROR "BoostPack: concurrent archive download failed:\n${output}\n${errors}")
-    endif()
-  endwhile()
+  endforeach()
+  set(${out_active} "${remaining}" PARENT_SCOPE)
 endfunction()
 
 function(_boostpack_fetch module version repository template out_source out_binary)
@@ -356,23 +348,22 @@ function(_boostpack_fetch module version repository template out_source out_bina
   string(SUBSTRING "${sha}" 0 24 short_sha)
 
   set(extract_dir "${CMAKE_BINARY_DIR}/_boostpack/sources/${module}/${short_sha}")
-  get_filename_component(extract_parent "${extract_dir}" DIRECTORY)
-  file(MAKE_DIRECTORY "${extract_parent}")
-  file(LOCK "${extract_dir}.lock" GUARD FUNCTION TIMEOUT 120 RESULT_VARIABLE lock_result)
-  if(NOT lock_result STREQUAL "0")
-    message(FATAL_ERROR "BoostPack: cannot lock extraction for '${module}': ${lock_result}")
-  endif()
-  set(ready "${extract_dir}/.boostpack-ready")
-  set(extract_valid FALSE)
-  if(EXISTS "${ready}")
-    file(READ "${ready}" cached_sha)
-    string(STRIP "${cached_sha}" cached_sha)
-    if(cached_sha STREQUAL sha)
-      set(extract_valid TRUE)
+  # A directory keyed by the archive SHA becomes visible only after
+  # extraction has completed and the temporary tree is renamed into place.
+  # No redundant ready marker or extraction-only lock file is necessary.
+  if(EXISTS "${extract_dir}")
+    # A cached extraction with its root CMake file removed is incomplete.
+    # Keep validation structural: a marker cannot prove file integrity.
+    file(GLOB roots "${extract_dir}/CMakeLists.txt"
+      "${extract_dir}/*/CMakeLists.txt"
+      "${extract_dir}/include/BoostInstall.cmake"
+      "${extract_dir}/*/include/BoostInstall.cmake")
+    if(NOT roots)
+      file(REMOVE_RECURSE "${extract_dir}")
     endif()
   endif()
-  if(NOT extract_valid)
-    file(REMOVE_RECURSE "${extract_dir}" "${extract_dir}.partial")
+  if(NOT EXISTS "${extract_dir}")
+    file(REMOVE_RECURSE "${extract_dir}.partial")
     file(MAKE_DIRECTORY "${extract_dir}.partial")
     file(ARCHIVE_EXTRACT INPUT "${archive}" DESTINATION "${extract_dir}.partial")
     file(RENAME "${extract_dir}.partial" "${extract_dir}")
@@ -397,10 +388,6 @@ function(_boostpack_fetch module version repository template out_source out_bina
         "BoostPack: archive for '${module}' must contain one Boost module root")
     endif()
     list(GET roots 0 source_dir)
-  endif()
-  # Never mark an incomplete or malformed extraction as reusable.
-  if(NOT extract_valid)
-    file(WRITE "${ready}" "${sha}\n")
   endif()
   set(binary_dir "${CMAKE_BINARY_DIR}/_boostpack/binary/${module}/${short_sha}")
   message(STATUS "BoostPack: resolving ${module} from Boost ${version}")
@@ -716,61 +703,131 @@ function(boostpack_add)
     list(PREPEND CMAKE_MODULE_PATH "${support_dir}/include")
   endif()
 
+  # Resolve targets in the caller's context, but keep independent downloads
+  # flowing. Every configured module can enqueue its dependencies immediately.
   set(queue ${BP_COMPONENTS})
-  while(queue)
+  set(inflight "")
+  string(TIMESTAMP last_progress "%s" UTC)
+  while(queue OR inflight)
     list(REMOVE_DUPLICATES queue)
-    _boostpack_prefetch("${queue}" "${BP_VERSION}" "${repository}" "${template}")
-    set(next_queue "")
-    foreach(module IN LISTS queue)
-    if(module IN_LIST loaded)
-      continue()
+    list(LENGTH inflight prior)
+    _boostpack_reap_downloads("${inflight}" inflight)
+    list(LENGTH inflight current)
+    set(progress FALSE)
+    if(current LESS prior)
+      set(progress TRUE)
     endif()
-    if(TARGET Boost::${module})
-      message(FATAL_ERROR "BoostPack: Boost::${module} already exists outside BoostPack")
-    endif()
-
-    _boostpack_fetch("${module}" "${BP_VERSION}" "${repository}" "${template}"
-      source_dir binary_dir)
-    if(NOT EXISTS "${source_dir}/CMakeLists.txt")
-      message(FATAL_ERROR
-        "BoostPack: '${module}' has no CMakeLists.txt at '${source_dir}'. "
-        "Verify that Boost ${BP_VERSION} contains the module and that the "
-        "mirror/cache is populated (offline=${BOOSTPACK_OFFLINE}).")
+    list(LENGTH queue count)
+    if(count EQUAL 1 AND NOT inflight)
+      set(single TRUE)
+    else()
+      set(single FALSE)
     endif()
 
-    _boostpack_needs_support("${source_dir}" needs_support)
-    if(needs_support)
-      if(NOT support_dir)
-        _boostpack_fetch("cmake" "${BP_VERSION}" "${repository}" "${template}"
-          support_dir support_binary)
-        if(NOT EXISTS "${support_dir}/include/BoostInstall.cmake")
-          message(FATAL_ERROR
-            "BoostPack: missing upstream CMake support for Boost ${BP_VERSION} "
-            "at '${support_dir}/include/BoostInstall.cmake'")
+    # Refill free slots as soon as target inspection discovers new modules.
+    if(NOT BOOSTPACK_OFFLINE AND NOT single)
+      foreach(candidate IN LISTS queue)
+        if(candidate IN_LIST loaded OR candidate IN_LIST inflight
+            OR EXISTS "${_BOOSTPACK_ARCHIVE_CACHE}/${candidate}.tar.gz")
+          continue()
         endif()
-        set_property(GLOBAL PROPERTY BOOSTPACK_SUPPORT_SOURCE "${support_dir}")
-        list(PREPEND CMAKE_MODULE_PATH "${support_dir}/include")
+        if(TARGET Boost::${candidate})
+          message(FATAL_ERROR "BoostPack: Boost::${candidate} already exists outside BoostPack")
+        endif()
+        list(LENGTH inflight active_count)
+        if(active_count GREATER_EQUAL 8)
+          break()
+        endif()
+        _boostpack_start_download("${candidate}" "${BP_VERSION}" "${repository}" "${template}")
+        list(APPEND inflight "${candidate}")
+        set(progress TRUE)
+      endforeach()
+    endif()
+
+    # Configure the first available package without waiting for all peers.
+    set(module "")
+    foreach(candidate IN LISTS queue)
+      if(candidate IN_LIST loaded
+          OR EXISTS "${_BOOSTPACK_ARCHIVE_CACHE}/${candidate}.tar.gz"
+          OR BOOSTPACK_OFFLINE)
+        set(module "${candidate}")
+        break()
       endif()
-      include(BoostInstall)
-    endif()
-
-    add_subdirectory("${source_dir}" "${binary_dir}" EXCLUDE_FROM_ALL)
-    if(NOT TARGET Boost::${module})
-      message(FATAL_ERROR
-        "BoostPack: '${module}' did not define Boost::${module} "
-        "for Boost ${BP_VERSION}; check upstream CMake support")
-    endif()
-
-    _boostpack_dependencies("${module}" "${source_dir}" deps)
-    list(APPEND loaded "${module}")
-    set_property(GLOBAL PROPERTY BOOSTPACK_MODULES "${loaded}")
-    message(STATUS "BoostPack: added Boost::${module}")
-    list(APPEND next_queue ${deps})
     endforeach()
-    set(queue ${next_queue})
+    if(NOT module AND single)
+      list(GET queue 0 module)
+    endif()
+    if(module)
+      list(REMOVE_ITEM queue "${module}")
+      if(NOT module IN_LIST loaded)
+        if(TARGET Boost::${module})
+          message(FATAL_ERROR "BoostPack: Boost::${module} already exists outside BoostPack")
+        endif()
+        _boostpack_fetch("${module}" "${BP_VERSION}" "${repository}" "${template}"
+          source_dir binary_dir)
+        if(NOT EXISTS "${source_dir}/CMakeLists.txt")
+          message(FATAL_ERROR
+            "BoostPack: '${module}' has no CMakeLists.txt at '${source_dir}'. "
+            "Verify that Boost ${BP_VERSION} contains the module and that the "
+            "mirror/cache is populated (offline=${BOOSTPACK_OFFLINE}).")
+        endif()
+        _boostpack_needs_support("${source_dir}" needs_support)
+        if(needs_support)
+          if(NOT support_dir)
+            _boostpack_fetch("cmake" "${BP_VERSION}" "${repository}" "${template}"
+              support_dir support_binary)
+            if(NOT EXISTS "${support_dir}/include/BoostInstall.cmake")
+              message(FATAL_ERROR
+                "BoostPack: missing upstream CMake support for Boost ${BP_VERSION} "
+                "at '${support_dir}/include/BoostInstall.cmake'")
+            endif()
+            set_property(GLOBAL PROPERTY BOOSTPACK_SUPPORT_SOURCE "${support_dir}")
+            list(PREPEND CMAKE_MODULE_PATH "${support_dir}/include")
+          endif()
+          include(BoostInstall)
+        endif()
+        add_subdirectory("${source_dir}" "${binary_dir}" EXCLUDE_FROM_ALL)
+        if(NOT TARGET Boost::${module})
+          message(FATAL_ERROR
+            "BoostPack: '${module}' did not define Boost::${module} "
+            "for Boost ${BP_VERSION}; check upstream CMake support")
+        endif()
+        _boostpack_dependencies("${module}" "${source_dir}" deps)
+        list(APPEND loaded "${module}")
+        set_property(GLOBAL PROPERTY BOOSTPACK_MODULES "${loaded}")
+        message(STATUS "BoostPack: added Boost::${module}")
+        list(APPEND queue ${deps})
+      endif()
+      set(progress TRUE)
+    endif()
+
+    if(progress)
+      string(TIMESTAMP last_progress "%s" UTC)
+    elseif(inflight)
+      string(TIMESTAMP now "%s" UTC)
+      math(EXPR idle "${now}-${last_progress}")
+      if(idle GREATER 420)
+        message(FATAL_ERROR "BoostPack: timed out waiting for downloads: ${inflight}")
+      endif()
+      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.2)
+    elseif(queue)
+      message(FATAL_ERROR "BoostPack: resolver stalled on '${queue}'")
+    endif()
   endwhile()
+  if(EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs")
+    file(REMOVE_RECURSE "${CMAKE_BINARY_DIR}/_boostpack/download-jobs")
+  endif()
 
   set_property(GLOBAL PROPERTY BOOSTPACK_VERSION "${BP_VERSION}")
   set_property(GLOBAL PROPERTY BOOSTPACK_REPOSITORY "${repository}")
   set_property(GLOBAL PROPERTY BOOSTPACK_URL_TEMPLATE "${template}")
 endfunction()
+
+# CMake -P executes the same standalone file in worker mode. A status update
+# is the final operation, after _boostpack_download has atomically published
+# its archive. Failed downloads publish their diagnostic before aborting.
+if(DEFINED _BOOSTPACK_WORKER_MODULE)
+  _boostpack_download("${_BOOSTPACK_WORKER_MODULE}" "${_BOOSTPACK_WORKER_URL}"
+    "${_BOOSTPACK_WORKER_ARCHIVE}" "${_BOOSTPACK_WORKER_EXPECTED}")
+  _boostpack_worker_result("OK")
+endif()

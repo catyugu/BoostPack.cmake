@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 # Real CMake targets are configured before their Boost:: dependencies exist.
 # Verify that discovery follows the configured graph, including nested files,
 # variable expansion, platform conditions and optional target expressions.
-set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support nested_support genex genex_inactive_unknown genex_bad genex_bad_condition genex_config_union genex_config_exclusive genex_target_exists missing_target)
+set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support nested_support stream_root stream_peer stream_leaf genex genex_inactive_unknown genex_bad genex_bad_condition genex_config_union genex_config_exclusive genex_target_exists missing_target)
 foreach(module IN LISTS fake_modules)
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/source/${module}")
   file(MAKE_DIRECTORY "${dir}")
@@ -81,6 +81,8 @@ foreach(module IN LISTS fake_modules)
   elseif(module STREQUAL "genex_bad_condition")
     string(APPEND definition
       "target_link_libraries(boost_genex_bad_condition INTERFACE \"$<IF:$<BOOL:$<JOIN:1,_>>,Boost::bar,Boost::headers>\")\n")
+  elseif(module STREQUAL "stream_root")
+    string(APPEND definition "target_link_libraries(boost_stream_root INTERFACE Boost::stream_leaf)\n")
   elseif(module STREQUAL "support")
     string(APPEND definition
       "target_link_libraries(boost_support INTERFACE Boost::config)\n"
@@ -168,13 +170,38 @@ elseif(TEST_CASE STREQUAL "parallel")
       message(FATAL_ERROR "Missing target or grouped build files for ${module}")
     endif()
   endforeach()
+  file(GLOB ready_markers "${CMAKE_BINARY_DIR}/_boostpack/sources/*/*/.boostpack-ready")
+  file(GLOB extraction_locks "${CMAKE_BINARY_DIR}/_boostpack/sources/*/*.lock")
+  if(ready_markers OR extraction_locks)
+    message(FATAL_ERROR "Redundant extraction markers or locks remain: ${ready_markers};${extraction_locks}")
+  endif()
   if(NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/archives/boost-1.92.0"
-      OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download.cmake"
-      OR NOT EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-build/CMakeCache.txt"
+      OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download.cmake"
+      OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs"
       OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_sources"
       OR EXISTS "${CMAKE_BINARY_DIR}/_boostpack_binary")
     message(FATAL_ERROR "BoostPack generated files are not grouped under _boostpack")
   endif()
+elseif(TEST_CASE STREQUAL "streaming")
+  set(template "@REPOSITORY@/@MODULE@/@TAG@.tar.gz")
+  string(SHA256 repository_hash "${fixture_repository}\n${template}")
+  string(SUBSTRING "${repository_hash}" 0 12 key)
+  set(cache_dir "${CMAKE_BINARY_DIR}/_boostpack/archives/boost-1.92.0/${key}")
+  file(MAKE_DIRECTORY "${cache_dir}")
+  file(COPY_FILE "${fixture_mirror}/stream_root/boost-1.92.0.tar.gz"
+    "${cache_dir}/stream_root.tar.gz")
+  file(REMOVE "${cache_dir}/stream_leaf.tar.gz" "${cache_dir}/stream_peer.tar.gz")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS stream_root stream_peer)
+  foreach(module IN ITEMS stream_root stream_peer stream_leaf)
+    if(NOT TARGET Boost::${module})
+      message(FATAL_ERROR "Streaming resolver missed Boost::${module}")
+    endif()
+  endforeach()
+  if(EXISTS "${CMAKE_BINARY_DIR}/_boostpack/download-jobs")
+    message(FATAL_ERROR "Transient downloader states were not cleaned up")
+  endif()
+elseif(TEST_CASE STREQUAL "async_failure")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS pfr other module_missing)
 elseif(TEST_CASE STREQUAL "incremental")
   _fixture_boostpack_add(VERSION 1.76.0 COMPONENTS pfr)
   _fixture_boostpack_add(VERSION 1.76.0 COMPONENTS foo pfr)

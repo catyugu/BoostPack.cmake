@@ -28,6 +28,14 @@ jobs:
         with:
           path: .boostpack-cache
           key: boostpack-compat-${{ runner.os }}-${{ inputs.boost_version }}
+      - name: Set C++ build parallelism to 1.5x available cores
+        if: inputs.suite == 'compatibility'
+        shell: bash
+        run: |
+          cores="$(nproc)"
+          jobs=$(( (cores * 3 + 1) / 2 ))
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >> "$GITHUB_ENV"
+          echo "Build parallelism: $jobs jobs on $cores logical cores"
       - name: Extended compatibility
         if: inputs.suite == 'compatibility'
         env:
@@ -38,7 +46,7 @@ jobs:
             "-DBOOST_VERSION=${BOOST_RELEASE}" \
             -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache" \
             -DBOOSTPACK_INTEGRATION_EXTENDED=ON
-          cmake --build build/compatibility --config Release --parallel 2
+          cmake --build build/compatibility --config Release
           ctest --test-dir build/compatibility -C Release --output-on-failure
       - name: Resolver benchmark
         if: inputs.suite == 'benchmark'

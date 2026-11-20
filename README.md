@@ -86,9 +86,9 @@ Offline mode also works without a lockfile if the archives are already cached; a
 
 BoostPack manages downloads and extraction independently. It neither reads nor modifies the host project's `FetchContent` declarations, cache location or offline settings.
 
-On a cold configure, BoostPack fetches each available dependency layer with up to eight concurrent CMake download workers. The next layer is determined from the upstream CMake target graph; no dependency list is hard-coded. The default GitHub download skips its archive redirect. Already-cached modules do not spawn download workers.
+On a cold configure, BoostPack maintains a streaming queue with up to eight concurrent downloads. Whenever an archive becomes available, its upstream CMake targets are configured immediately in the calling project, and newly discovered dependencies are queued without waiting for other downloads to finish. In-flight and already-loaded modules are deduplicated, and a single uncached module is downloaded synchronously to avoid worker startup overhead. No dependency list is hard-coded. The default GitHub download skips its archive redirect.
 
-Generated files stay under `<build>/_boostpack/`: `archives/` (default archive cache), `sources/` (extracted sources), `binary/` (upstream CMake build trees), and a small internal `download-project/`, `download-build/`, `download-jobs/`, and `download.cmake` (created only when parallel downloads are needed). Setting `BOOSTPACK_CACHE_DIR` explicitly still places the archive cache at the requested path; it does not move generated sources or binary files.
+Generated files stay under `<build>/_boostpack/`: `archives/` (default archive cache), `sources/` (extracted sources), and `binary/` (upstream CMake build trees). While downloads are running, temporary status files live under `download-jobs/`; they are removed after success. The streaming worker executes this same standalone CMake file, rather than generating a file or script for each module. Archive and lockfile `.lock` files are genuine inter-process synchronization locks and must not be removed while another process could be using them. Partial downloads/extractions are written under temporary paths and atomically renamed; an additional extraction-ready marker is unnecessary. Worker startup uses the operating system's built-in shell (`/bin/sh` on Unix, Windows PowerShell on Windows), with no extra consumer tools. Setting `BOOSTPACK_CACHE_DIR` explicitly still places the archive cache at the requested path; it does not move generated sources or binary files.
 
 ## Dependency discovery and scope
 
@@ -106,7 +106,7 @@ The resolver covers dependencies expressed through CMake target link properties.
 - [`examples/cli-report`](examples/cli-report): compiled Program_options, Filesystem and Serialization plus Regex; exercises shared libraries and a deterministic file-report round trip.
 - [`examples/host-project`](examples/host-project): a consuming project with native `FetchContent`, incremental `boostpack_add()` calls, a build-local lockfile, and a fresh offline configure that reuses its archive cache.
 
-The examples are intentionally varied: Boost 1.89.0 and 1.92.0, C++17 and C++20, header-only and compiled targets, shared linking, optional source mirrors, and coexistence with a host project's native `FetchContent`. CI reuses the existing three OS jobs to build and run every example; no new matrix entries or synthetic fixtures are required.
+The examples are intentionally varied: Boost 1.89.0 and 1.92.0, C++17 and C++20, header-only and compiled targets, shared linking, optional source mirrors, and coexistence with a host project's native `FetchContent`. Run the **Examples** workflow manually to configure, build and test every example on Linux, Windows and macOS; routine CI focuses on unit tests and real Boost integration tests.
 
 The host-project example exercises cache and lockfile reuse across independent build trees. Its first configure downloads the necessary module archives and writes a lockfile; its CTest then performs a fresh configure with `BOOSTPACK_OFFLINE=ON` and the same cache and lockfile:
 
@@ -138,7 +138,8 @@ With `BOOSTPACK_INTEGRATION_EXTENDED=ON`, the test project additionally builds `
 
 GitHub Actions is split by responsibility:
 
-- [CI](.github/workflows/ci.yml) runs on PRs and `main` pushes, with **one job on each of Linux, Windows and macOS**. Each job runs the root `tests/` suite, the default real-Boost `tests/integration/` suite, and **every project under `examples/`** (configure, build and execute its tests). Linux exercises CMake 3.22. Superseded PR runs are canceled.
+- [CI](.github/workflows/ci.yml) runs on PRs and `main` pushes on **Linux, Windows and macOS**. It runs the root `tests/` suite and default real-Boost `tests/integration/` suite, without compiling examples. Linux exercises CMake 3.22. Superseded PR runs are canceled.
+- [Examples](.github/workflows/examples.yml) runs only when manually dispatched from [Actions → Examples](https://github.com/catyugu/BoostPack.cmake/actions/workflows/examples.yml). It configures, builds and tests **every project under `examples/`** on all three operating systems.
 - [Manual](.github/workflows/manual.yml) runs only when explicitly dispatched from [Actions → Manual](https://github.com/catyugu/BoostPack.cmake/actions/workflows/manual.yml). Choose `compatibility` for the extended compiled/assembler-dependent Boost suite (with an optional Boost version), or `benchmark` for the offline resolver benchmark. Neither is a regular CI job.
 - [Release](.github/workflows/release.yml) runs after a successful `main` push CI. If the CMake and standalone-file versions agree and that version is not yet released, it creates an annotated `v<version>` tag on the tested `main` commit and publishes the standalone `BoostPack.cmake` asset. Existing releases are left unchanged.
 
