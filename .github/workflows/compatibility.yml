@@ -1,0 +1,36 @@
+name: Extended compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      boost_version:
+        description: Boost release to test
+        default: '1.92.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compiled:
+    name: Real Boost compiled and assembler modules / Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .boostpack-cache
+          key: boostpack-compat-${{ inputs.boost_version }}-${{ runner.os }}-source
+      - name: Configure extended integration
+        run: >-
+          cmake -S tests/integration -B build/compatibility
+          -DBOOST_VERSION=${{ inputs.boost_version }}
+          -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache"
+          -DBOOSTPACK_INTEGRATION_EXTENDED=ON
+          -DBOOSTPACK_INTEGRATION_DEEP=ON
+          -DBOOSTPACK_INTEGRATION_HEAVY=ON
+      - name: Build
+        run: cmake --build build/compatibility --config Release --parallel 2
+      - name: Test
+        run: ctest --test-dir build/compatibility -C Release --output-on-failure
