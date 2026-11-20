@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
 # Real CMake targets are configured before their Boost:: dependencies exist.
 # Verify that discovery follows the configured graph, including nested files,
 # variable expansion, platform conditions and optional target expressions.
-set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support missing_target)
+set(fake_modules config bar headers foo pfr other includes condition dynamic nested optional support genex genex_bad missing_target)
 foreach(module IN LISTS fake_modules)
   set(dir "${CMAKE_CURRENT_BINARY_DIR}/source/${module}")
   file(MAKE_DIRECTORY "${dir}")
@@ -45,6 +45,22 @@ foreach(module IN LISTS fake_modules)
     string(APPEND definition "add_subdirectory(impl)\ntarget_link_libraries(boost_nested INTERFACE boost_nested_impl)\n")
   elseif(module STREQUAL "optional")
     string(APPEND definition "target_link_libraries(boost_optional INTERFACE \"$<TARGET_NAME_IF_EXISTS:Boost::ghost>\" Boost::bar)\n")
+  elseif(module STREQUAL "genex")
+    string(APPEND definition
+      "target_link_libraries(boost_genex INTERFACE\n"
+      "  \"$<IF:$<BOOL:1>,Boost::bar,Boost::ghost_true>\"\n"
+      "  \"$<IF:$<BOOL:0>,Boost::ghost_false,Boost::headers>\"\n"
+      "  \"$<$<NOT:$<BOOL:0>>:Boost::pfr>\"\n"
+      "  \"$<IF:$<AND:$<BOOL:1>,$<NOT:$<BOOL:0>>>,Boost::config,Boost::ghost_and>\"\n"
+      "  \"$<BUILD_INTERFACE:$<LINK_ONLY:Boost::pfr>>\"\n"
+      "  \"$<INSTALL_INTERFACE:Boost::ghost_install>\"\n"
+      "  \"$<TARGET_NAME_IF_EXISTS:Boost::ghost_optional>\"\n"
+      "  \"$<IF:$<CONFIG:Debug>,Boost::other,Boost::headers>\"\n"
+      "  \"$<IF:$<PLATFORM_ID:${CMAKE_SYSTEM_NAME}>,Boost::config,Boost::ghost_platform>\"\n"
+      ")\n")
+  elseif(module STREQUAL "genex_bad")
+    string(APPEND definition
+      "target_link_libraries(boost_genex_bad INTERFACE \"$<JOIN:Boost::bar,->\")\n")
   elseif(module STREQUAL "support")
     string(APPEND definition
       "target_link_libraries(boost_support INTERFACE Boost::config)\n"
@@ -173,6 +189,35 @@ elseif(TEST_CASE STREQUAL "support")
   if(NOT calls STREQUAL yes OR NOT TARGET Boost::config)
     message(FATAL_ERROR "Upstream support was not initialized")
   endif()
+elseif(TEST_CASE STREQUAL "genex")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex)
+  foreach(expected IN ITEMS genex bar config headers pfr)
+    if(NOT TARGET Boost::${expected})
+      message(FATAL_ERROR "Missing generator-expression dependency ${expected}")
+    endif()
+  endforeach()
+  foreach(unwanted IN ITEMS ghost_true ghost_false ghost_and ghost_install
+      ghost_optional ghost_platform)
+    if(TARGET Boost::${unwanted})
+      message(FATAL_ERROR "Inactive generator-expression branch was downloaded: ${unwanted}")
+    endif()
+  endforeach()
+  set(expect_debug FALSE)
+  if(CMAKE_CONFIGURATION_TYPES)
+    list(FIND CMAKE_CONFIGURATION_TYPES Debug debug_index)
+    if(NOT debug_index EQUAL -1)
+      set(expect_debug TRUE)
+    endif()
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(expect_debug TRUE)
+  endif()
+  if(expect_debug AND NOT TARGET Boost::other)
+    message(FATAL_ERROR "A Debug configuration requires Boost::other")
+  elseif(NOT expect_debug AND TARGET Boost::other)
+    message(FATAL_ERROR "Inactive Debug-only dependency was downloaded")
+  endif()
+elseif(TEST_CASE STREQUAL "genex_bad")
+  _fixture_boostpack_add(VERSION 1.92.0 COMPONENTS genex_bad)
 elseif(TEST_CASE STREQUAL "collision")
   add_library(foreign_bar INTERFACE)
   add_library(Boost::bar ALIAS foreign_bar)

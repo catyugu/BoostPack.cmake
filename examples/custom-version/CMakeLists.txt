@@ -4,9 +4,14 @@ include(CTest)
 
 set(BOOST_VERSION "1.89.0" CACHE STRING "Boost release to download")
 set(BOOST_MIRROR "https://github.com/boostorg" CACHE STRING "Module repository base URL")
+set(BOOST_SOURCE_TEMPLATE "" CACHE STRING "Optional archive URL template for this example")
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/BoostPack.cmake")
+set(archive_args "")
+if(BOOST_SOURCE_TEMPLATE)
+  list(APPEND archive_args URL_TEMPLATE "${BOOST_SOURCE_TEMPLATE}")
+endif()
 boostpack_add(VERSION "${BOOST_VERSION}" REPOSITORY "${BOOST_MIRROR}"
-  COMPONENTS pfr mp11)
+  ${archive_args} COMPONENTS pfr mp11)
 
 add_executable(example_custom_version main.cpp)
 target_compile_features(example_custom_version PRIVATE cxx_std_17)

@@ -122,6 +122,18 @@ ctest --test-dir build/integration -C Release --output-on-failure
 
 GitHub Actions tests CMake 3.22.6, GCC, Clang, AppleClang, MSVC, static/shared builds, more than one Boost release, extended modules, custom mirror URLs, and real Boost locked/offline builds. Ordinary pushes and PRs run CI; releases are published only from version tags matching the source version and reachable from `main`.
 
+### Reproducible resolver benchmark
+
+The benchmark uses 24 synthetic Boost modules in a transitive chain, with local `file://` archives and no network access or external tools. It measures fresh configuration and download into an empty cache (`cold`), configuration from the same archive cache with offline mode enabled (`warm`), and reconfiguration of that build tree (`reconfigure`):
+
+```sh
+cmake -DBENCH_ROOT=build/resolver-benchmark -P tests/benchmark/run.cmake
+```
+
+Results are saved to `build/resolver-benchmark/results.csv`. CI runs this benchmark on CMake 3.22 and uploads its CSV as an artifact. Timings depend on the machine and filesystem; comparisons should use the same environment.
+
+Generator-expression discovery now resolves common link expressions, including `IF`, `BOOL`, `CONFIG`, `BUILD_INTERFACE`, `INSTALL_INTERFACE`, `LINK_ONLY`, and optional target names. Single-configuration builds only fetch their active branch; multi-configuration generators include the union of their build configurations. Unsupported link expressions fail with a diagnostic rather than silently downloading inactive branches.
+
 ## License
 
 BoostPack itself is [MIT licensed](LICENSE). Each fetched Boost module remains subject to its own upstream license (usually Boost Software License 1.0).

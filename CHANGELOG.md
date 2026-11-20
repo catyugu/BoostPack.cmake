@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 - 2026-11-20
+
+- Resolve conditional Boost target links by evaluating nested generator expressions before dependency discovery. Skip inactive and install-only branches instead of speculatively downloading modules.
+- Preserve the union of required targets for multi-config generators and diagnose unsupported link expressions rather than silently guessing.
+- Add cross-platform regression cases for conditional dependencies and an offline, reproducible cold/warm/reconfigure benchmark with 24 synthetic Boost modules.
+
+
 ## 0.2.2 - 2026-11-20
 
 - Add one optional `BOOSTPACK_LOCKFILE` setting; automatically create the JSON lockfile if absent and strictly verify Boost version, source endpoint, archive SHA256 and dependency closure if present.

@@ -1,6 +1,6 @@
 foreach(case IN ITEMS
     minimal closure incremental reinclude repository template
-    conditional included dynamic nested optional support
+    conditional included dynamic nested optional support genex genex_bad
     collision version_conflict repository_conflict template_conflict cycle
     missing_offline bad_module bad_version bad_template missing_arguments missing_target)
   add_test(NAME configure_${case}
@@ -8,7 +8,7 @@ foreach(case IN ITEMS
       -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
       -B "${CMAKE_CURRENT_BINARY_DIR}/cases/${case}"
       "-DTEST_CASE=${case}")
-  if(case MATCHES "^(collision|version_conflict|repository_conflict|template_conflict|cycle|missing_offline|bad_module|bad_version|bad_template|missing_arguments|missing_target)$")
+  if(case MATCHES "^(genex_bad|collision|version_conflict|repository_conflict|template_conflict|cycle|missing_offline|bad_module|bad_version|bad_template|missing_arguments|missing_target)$")
     set_tests_properties(configure_${case} PROPERTIES WILL_FAIL TRUE)
   endif()
 endforeach()
