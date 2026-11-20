@@ -86,7 +86,7 @@ check_case(read_fresh TRUE "")
 # A present but corrupted ready marker must trigger re-extraction on reconfigure.
 string(JSON foo_hash GET "${data}" modules foo sha256)
 string(SUBSTRING "${foo_hash}" 0 24 foo_short_hash)
-set(foo_ready "${root}/read_fresh/_boostpack_sources/foo/${foo_short_hash}/.boostpack-ready")
+set(foo_ready "${root}/read_fresh/_boostpack/sources/foo/${foo_short_hash}/.boostpack-ready")
 if(NOT EXISTS "${foo_ready}")
   message(FATAL_ERROR "Expected extraction completion marker not found")
 endif()
