@@ -85,16 +85,18 @@ foreach(module IN LISTS fake_modules)
     string(APPEND definition "target_link_libraries(boost_stream_root INTERFACE Boost::stream_leaf)\n")
   elseif(module STREQUAL "stream_peer" AND TEST_CASE STREQUAL "streaming")
     # Verify the transitive download is already in progress when an unrelated
-    # module is configured. Inspect the worker's nonempty state, not its name.
+    # module is configured. The state may already have been reaped.
     set(leaf_status "${CMAKE_BINARY_DIR}/_boostpack/download-jobs/stream_leaf.status")
     string(APPEND definition
-      "if(NOT EXISTS \"${leaf_status}\")\n"
+      "file(GLOB downloaded \"${CMAKE_BINARY_DIR}/_boostpack/archives/boost-1.92.0/*/stream_leaf.tar.gz\")\n"
+      "if(EXISTS \"${leaf_status}\")\n"
+      "  file(READ \"${leaf_status}\" state)\n"
+      "  string(STRIP \"\${state}\" state)\n"
+      "  if(NOT state MATCHES \"^(RUNNING|OK)$\")\n"
+      "    message(FATAL_ERROR \"Unexpected stream_leaf download state: \${state}\")\n"
+      "  endif()\n"
+      "elseif(NOT downloaded)\n"
       "  message(FATAL_ERROR \"Transitive stream_leaf was not scheduled before stream_peer\")\n"
-      "endif()\n"
-      "file(READ \"${leaf_status}\" state)\n"
-      "string(STRIP \"\${state}\" state)\n"
-      "if(NOT state MATCHES \"^(RUNNING|OK)$\")\n"
-      "  message(FATAL_ERROR \"Unexpected stream_leaf download state: \${state}\")\n"
       "endif()\n")
   elseif(module STREQUAL "support")
     string(APPEND definition
