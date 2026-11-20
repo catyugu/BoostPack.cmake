@@ -100,8 +100,19 @@ The resolver covers dependencies expressed through CMake target link properties.
 - [`examples/json`](examples/json): JSON and URL libraries with transitive dependencies.
 - [`examples/custom-version`](examples/custom-version): Boost 1.89 with PFR, MP11 and Describe, plus optional mirror and archive-template selection.
 - [`examples/cli-report`](examples/cli-report): compiled Program_options, Filesystem and Serialization plus Regex; exercises shared libraries and a deterministic file-report round trip.
+- [`examples/host-project`](examples/host-project): a consuming project with native `FetchContent`, incremental `boostpack_add()` calls, a build-local lockfile, and a fresh offline configure that reuses its archive cache.
 
-The examples are intentionally varied: different Boost releases, C++ language levels, header-only and compiled targets, default and shared linking, and optional source mirrors. CI reuses its existing three OS jobs to build and run every example; no additional CI matrix or synthetic tests are needed for this coverage.
+The examples are intentionally varied: Boost 1.89.0 and 1.92.0, C++17 and C++20, header-only and compiled targets, shared linking, optional source mirrors, and coexistence with a host project's native `FetchContent`. CI reuses the existing three OS jobs to build and run every example; no new matrix entries or synthetic fixtures are required.
+
+The host-project example exercises cache and lockfile reuse across independent build trees. Its first configure downloads the necessary module archives and writes a lockfile; its CTest then performs a fresh configure with `BOOSTPACK_OFFLINE=ON` and the same cache and lockfile:
+
+```sh
+cmake -S examples/host-project -B build/host-project
+cmake --build build/host-project --config Release
+ctest --test-dir build/host-project -C Release --output-on-failure
+```
+
+The local `FetchContent` dependency requires no network access and retains the host's own offline and cache settings. A passing example verifies the specific modules and platforms exercised; it does not guarantee compatibility with every upstream Boost module or release.
 
 Run the synthetic, offline-capable unit tests:
 
