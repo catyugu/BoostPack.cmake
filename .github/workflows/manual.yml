@@ -28,6 +28,11 @@ jobs:
         with:
           path: .boostpack-cache
           key: boostpack-compat-${{ runner.os }}-${{ inputs.boost_version }}
+      - name: Use all available logical cores for C++ builds
+        if: inputs.suite == 'compatibility'
+        shell: bash
+        run: |
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> "$GITHUB_ENV"
       - name: Extended compatibility
         if: inputs.suite == 'compatibility'
         env:
@@ -38,7 +43,7 @@ jobs:
             "-DBOOST_VERSION=${BOOST_RELEASE}" \
             -DBOOSTPACK_CACHE_DIR="${{ github.workspace }}/.boostpack-cache" \
             -DBOOSTPACK_INTEGRATION_EXTENDED=ON
-          cmake --build build/compatibility --config Release --parallel
+          cmake --build build/compatibility --config Release
           ctest --test-dir build/compatibility -C Release --output-on-failure
       - name: Resolver benchmark
         if: inputs.suite == 'benchmark'
