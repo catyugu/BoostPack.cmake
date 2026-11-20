@@ -31,6 +31,18 @@ jobs:
         with:
           path: .boostpack-cache
           key: boostpack-ci-${{ runner.os }}-1.89-1.92
+      - name: Use all available logical cores for C++ builds
+        shell: bash
+        run: |
+          if [[ -n "${NUMBER_OF_PROCESSORS:-}" ]]; then
+            jobs="$NUMBER_OF_PROCESSORS"
+          elif command -v nproc >/dev/null 2>&1; then
+            jobs="$(nproc)"
+          else
+            jobs="$(sysctl -n hw.logicalcpu)"
+          fi
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >> "$GITHUB_ENV"
+          echo "Build parallelism: $jobs jobs"
       - name: Configure and run unit tests
         shell: bash
         run: |
@@ -45,7 +57,7 @@ jobs:
           set -euo pipefail
           cmake -S tests/integration -B build/integration \
             -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
-          cmake --build build/integration --config Release --parallel
+          cmake --build build/integration --config Release
           ctest --test-dir build/integration -C Release --output-on-failure
       - name: Build and run every example
         shell: bash
@@ -56,6 +68,6 @@ jobs:
             name="${directory##*/}"
             cmake -S "$directory" -B "build/examples/$name" \
               -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
-            cmake --build "build/examples/$name" --config Release --parallel
+            cmake --build "build/examples/$name" --config Release
             ctest --test-dir "build/examples/$name" -C Release --output-on-failure
           done
