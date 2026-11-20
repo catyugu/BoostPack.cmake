@@ -118,9 +118,13 @@ ctest --test-dir build/integration -C Release --output-on-failure
 
 With `BOOSTPACK_INTEGRATION_EXTENDED=ON`, the test project additionally builds `asio`, `filesystem`, `regex`, `thread`, `program_options`, `serialization`, `iostreams`, `context`, `coroutine` and `fiber`. The assembler-dependent modules require a compatible platform toolchain.
 
-There is **one [CI workflow](.github/workflows/ci.yml)**. Pull requests, main pushes and release tags run only two smoke configurations: Linux with CMake 3.22 and Windows with the runner's CMake. These run the offline synthetic suite (mirrors, lockfiles and resolver regressions) and build/test actual Boost.JSON and Boost.URL targets. Superseded PR runs are canceled. A validated version tag also publishes the standalone file.
+GitHub Actions is split by responsibility:
 
-For broader coverage, choose **[Actions → CI → Run workflow](https://github.com/catyugu/BoostPack.cmake/actions/workflows/ci.yml)** and select `compatibility` (optionally set the Boost version) or `benchmark`. These suites run **only on demand**, never on PRs, main pushes or tags, and do not gate releases. The benchmark is also available locally:
+- [CI](.github/workflows/ci.yml) runs on PRs and `main` pushes, with **one job on each of Linux, Windows and macOS**. Each job runs the root `tests/` suite, the default real-Boost `tests/integration/` suite, and **every project under `examples/`** (configure, build and execute its tests). Linux exercises CMake 3.22. Superseded PR runs are canceled.
+- [Manual](.github/workflows/manual.yml) runs only when explicitly dispatched from [Actions → Manual](https://github.com/catyugu/BoostPack.cmake/actions/workflows/manual.yml). Choose `compatibility` for the extended compiled/assembler-dependent Boost suite (with an optional Boost version), or `benchmark` for the offline resolver benchmark. Neither is a regular CI job.
+- [Release](.github/workflows/release.yml) runs after a successful `main` push CI. If the CMake and standalone-file versions agree and that version is not yet released, it creates an annotated `v<version>` tag on the tested `main` commit and publishes the standalone `BoostPack.cmake` asset. Existing releases are left unchanged.
+
+The benchmark can also be run locally:
 
 ```sh
 cmake -DBENCH_ROOT=build/resolver-benchmark -P tests/benchmark/run.cmake
