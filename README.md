@@ -86,9 +86,9 @@ Offline mode also works without a lockfile if the archives are already cached; a
 
 BoostPack manages downloads and extraction independently. It neither reads nor modifies the host project's `FetchContent` declarations, cache location or offline settings.
 
-On a cold configure, BoostPack fetches each available dependency layer with up to eight concurrent CMake download workers. The next layer is determined from the upstream CMake target graph; no dependency list is hard-coded. The default GitHub download skips its archive redirect. Already-cached modules do not spawn download workers.
+On a cold configure, BoostPack maintains a streaming queue with up to eight concurrent downloads. Whenever an archive becomes available, its upstream CMake targets are configured immediately in the calling project, and newly discovered dependencies are queued without waiting for other downloads to finish. In-flight and already-loaded modules are deduplicated, and a single uncached module is downloaded synchronously to avoid worker startup overhead. No dependency list is hard-coded. The default GitHub download skips its archive redirect.
 
-Generated files stay under `<build>/_boostpack/`: `archives/` (default archive cache), `sources/` (extracted sources), `binary/` (upstream CMake build trees), and a small internal `download-project/`, `download-build/`, `download-jobs/`, and `download.cmake` (created only when parallel downloads are needed). Setting `BOOSTPACK_CACHE_DIR` explicitly still places the archive cache at the requested path; it does not move generated sources or binary files.
+Generated files stay under `<build>/_boostpack/`: `archives/` (default archive cache), `sources/` (extracted sources), `binary/` (upstream CMake build trees), and internal `download-jobs/` and `download.cmake` files (created only when asynchronous downloads are needed). The worker launcher uses the operating system's built-in shell (`/bin/sh` on Unix, Windows PowerShell on Windows); users need no additional tools. Setting `BOOSTPACK_CACHE_DIR` explicitly still places the archive cache at the requested path; it does not move generated sources or binary files.
 
 ## Dependency discovery and scope
 
