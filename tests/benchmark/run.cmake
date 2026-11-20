@@ -46,36 +46,48 @@ else()
 endif()
 file(WRITE "${root}/results.csv" "scenario,seconds\n")
 
+# CTest's JUnit testcase duration is fractional wall-clock time on CMake 3.22;
+# cmake -E time on that version reports wall time in whole seconds only.
+file(MAKE_DIRECTORY "${root}/timer")
+file(WRITE "${root}/timer/CMakeLists.txt" [=[
+cmake_minimum_required(VERSION 3.22)
+project(BoostPackBenchmarkTimer LANGUAGES NONE)
+enable_testing()
+add_test(NAME configure COMMAND "${CMAKE_COMMAND}"
+  -S "${BENCH_SOURCE}" -B "${BENCH_BUILD}"
+  "-DBENCH_REPOSITORY=${BENCH_REPOSITORY}"
+  "-DBOOSTPACK_CACHE_DIR=${BENCH_CACHE}"
+  "-DBOOSTPACK_OFFLINE=${BENCH_OFFLINE}")
+]=])
+
 function(run_case label directory offline)
-  execute_process(COMMAND "${CMAKE_COMMAND}" -E time "${CMAKE_COMMAND}"
-      -S "${CMAKE_CURRENT_LIST_DIR}/project" -B "${root}/${directory}"
+  execute_process(COMMAND "${CMAKE_COMMAND}"
+      -S "${root}/timer" -B "${root}/timer-build"
+      "-DBENCH_SOURCE=${CMAKE_CURRENT_LIST_DIR}/project"
+      "-DBENCH_BUILD=${root}/${directory}"
       "-DBENCH_REPOSITORY=${repository}"
-      "-DBOOSTPACK_CACHE_DIR=${root}/cache"
-      "-DBOOSTPACK_OFFLINE=${offline}"
+      "-DBENCH_CACHE=${root}/cache"
+      "-DBENCH_OFFLINE=${offline}"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+  if(NOT result EQUAL 0)
+    message(FATAL_ERROR "${label} timer configuration failed:\n${output}\n${error}")
+  endif()
+  execute_process(COMMAND "${CMAKE_CTEST_COMMAND}"
+      --test-dir "${root}/timer-build"
+      --output-junit "${root}/${label}.xml"
+      --output-on-failure
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
   if(NOT result EQUAL 0)
     message(FATAL_ERROR "${label} configure failed:\n${output}\n${error}")
   endif()
-  # CMake 3.22 prints integer wall time plus a fractional clock time;
-  # newer versions print a fractional wall time directly.
-  string(REGEX MATCH "Elapsed time[^\r\n]*" timer "${output}\n${error}")
-  if(NOT timer)
-    message(FATAL_ERROR "Could not locate CMake -E time output:\n${output}\n${error}")
+  file(READ "${root}/${label}.xml" report)
+  string(REGEX MATCH "<testcase[^>]*time=\"([0-9]+([.][0-9]+)?)\"" testcase "${report}")
+  if(NOT testcase)
+    message(FATAL_ERROR "Could not parse CTest JUnit duration:\n${report}")
   endif()
-  string(REGEX MATCH "([0-9]+([.][0-9]+)?) s[.] [(]clock[)]"
-    precise "${timer}")
-  if(precise)
-    set(seconds "${CMAKE_MATCH_1}")
-  else()
-    string(REGEX MATCH "Elapsed time[^0-9]*([0-9]+([.][0-9]+)?)"
-      elapsed "${timer}")
-    if(NOT elapsed)
-      message(FATAL_ERROR "Could not parse CMake -E time output: ${timer}")
-    endif()
-    set(seconds "${CMAKE_MATCH_1}")
-  endif()
+  set(seconds "${CMAKE_MATCH_1}")
   file(APPEND "${root}/results.csv" "${label},${seconds}\n")
-  message(STATUS "${label}: ${seconds} s [${timer}]")
+  message(STATUS "${label}: ${seconds} s")
 endfunction()
 
 message(STATUS "BoostPack resolution benchmark: 24 synthetic modules, CMake ${CMAKE_VERSION}")
