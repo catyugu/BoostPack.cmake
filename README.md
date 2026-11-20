@@ -88,7 +88,7 @@ BoostPack manages downloads and extraction independently. It neither reads nor m
 
 On a cold configure, BoostPack fetches each available dependency layer with up to eight concurrent CMake download workers. The next layer is determined from the upstream CMake target graph; no dependency list is hard-coded. The default GitHub download skips its archive redirect. Already-cached modules do not spawn download workers.
 
-Generated files stay under `<build>/_boostpack/`: `archives/` (default archive cache), `sources/` (extracted sources), `binary/` (upstream CMake build trees), and `download.cmake` (created only when parallel downloads are needed). Setting `BOOSTPACK_CACHE_DIR` explicitly still places the archive cache at the requested path; it does not move generated sources or binary files.
+Generated files stay under `<build>/_boostpack/`: `archives/` (default archive cache), `sources/` (extracted sources), `binary/` (upstream CMake build trees), and a small internal `download-project/`, `download-build/`, `download-jobs/`, and `download.cmake` (created only when parallel downloads are needed). Setting `BOOSTPACK_CACHE_DIR` explicitly still places the archive cache at the requested path; it does not move generated sources or binary files.
 
 ## Dependency discovery and scope
 
