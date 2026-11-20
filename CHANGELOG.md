@@ -5,7 +5,8 @@
 - Prune inactive or install-only generator-expression branches before rejecting unsupported nested link expressions, while preserving diagnostics for active expressions.
 - Detect upstream CMake helpers in included scripts and nested build definitions.
 - Leave legal interface dependency cycles to CMake's target graph validation.
-- Add synthetic resolver regressions and a separate on-demand compatibility Action for compiled and assembler-dependent modules, without expanding the required CI matrix.
+- Add synthetic resolver regressions and an optional compiled/assembler compatibility suite.
+- Consolidate three GitHub Actions workflows into one. Require only Linux/CMake 3.22 and Windows smoke checks for PRs, main pushes and tags; run compatibility and benchmarks manually, and cancel superseded PR runs.
 
 
 ## 0.2.4 - 2026-11-20

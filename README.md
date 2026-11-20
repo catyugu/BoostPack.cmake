@@ -116,9 +116,11 @@ cmake --build build/integration --config Release
 ctest --test-dir build/integration -C Release --output-on-failure
 ```
 
-The optional deep integration tests compile and run `program_options`, `serialization`, and `iostreams` (`-DBOOSTPACK_INTEGRATION_DEEP=ON`). The separately dispatched [Extended Compatibility Action](.github/workflows/compatibility.yml) also exercises the assembler-dependent `context`, `coroutine` and `fiber` modules without gating normal CI.
+The optional deep integration tests compile and run `program_options`, `serialization`, and `iostreams` (`-DBOOSTPACK_INTEGRATION_DEEP=ON`); the heavy option (`-DBOOSTPACK_INTEGRATION_HEAVY=ON`) adds `context`, `coroutine` and `fiber`.
 
-The [CI workflow](.github/workflows/ci.yml) runs platform, compiler, mirror, lockfile and offline tests on pushes, pull requests and release tags. The resolver benchmark is **separate** and runs only on demand, via [Actions → Benchmark](https://github.com/catyugu/BoostPack.cmake/actions/workflows/benchmark.yml) or locally:
+There is **one [CI workflow](.github/workflows/ci.yml)**. Pull requests, main pushes and release tags run only two smoke configurations: Linux with CMake 3.22 and Windows with the runner's CMake. These run the offline synthetic suite (mirrors, lockfiles and resolver regressions) and build/test actual Boost.JSON and Boost.URL targets. Superseded PR runs are canceled. A validated version tag also publishes the standalone file.
+
+For broader coverage, choose **[Actions → CI → Run workflow](https://github.com/catyugu/BoostPack.cmake/actions/workflows/ci.yml)** and select `compatibility` (optionally set the Boost version) or `benchmark`. These suites run **only on demand**, never on PRs, main pushes or tags, and do not gate releases. The benchmark is also available locally:
 
 ```sh
 cmake -DBENCH_ROOT=build/resolver-benchmark -P tests/benchmark/run.cmake

@@ -11,6 +11,6 @@ cmake -S . -B build -DBUILD_TESTING=ON
 ctest --test-dir build --output-on-failure
 ```
 
-For changes involving real Boost modules or toolchains, also run the [integration tests](README.md#examples-and-testing). The [resolver benchmark](README.md#examples-and-testing) is optional: run it locally or use **Actions → Benchmark → Run workflow**. Performance results should be compared on the same environment.
+For changes involving real Boost modules or toolchains, also run the [integration tests](README.md#examples-and-testing). Use **Actions → CI → Run workflow** and choose `compatibility` for additional compiled/assembler-dependent modules or `benchmark` for the resolver benchmark. Both are manual; compare performance results on the same environment.
 
-PRs target `main`. [CI](.github/workflows/ci.yml) covers the supported CMake/platform matrix, archive mirrors, lockfiles and offline behavior. Version tags trigger release validation and publication of the standalone file; benchmark results never gate releases.
+PRs target `main`. The [single workflow](.github/workflows/ci.yml) performs only two automatic smoke checks (Linux/CMake 3.22 and Windows), covering offline fixtures and a real Boost build. Detailed compatibility and performance suites stay optional. Version tags publish the standalone file only after both smoke checks pass.
