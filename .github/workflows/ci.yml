@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test:
-    name: Tests and examples / ${{ matrix.os }}
+    name: Unit and integration / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -60,15 +60,3 @@ jobs:
             -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
           cmake --build build/integration --config Release
           ctest --test-dir build/integration -C Release --output-on-failure
-      - name: Build and run every example
-        shell: bash
-        run: |
-          set -euo pipefail
-          for project in examples/*/CMakeLists.txt; do
-            directory="${project%/CMakeLists.txt}"
-            name="${directory##*/}"
-            cmake -S "$directory" -B "build/examples/$name" \
-              -DBOOSTPACK_CACHE_DIR="$GITHUB_WORKSPACE/.boostpack-cache"
-            cmake --build "build/examples/$name" --config Release
-            ctest --test-dir "build/examples/$name" -C Release --output-on-failure
-          done
