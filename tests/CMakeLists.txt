@@ -4,18 +4,11 @@ foreach(case IN ITEMS
     genex genex_inactive_unknown genex_bad genex_bad_condition genex_config_exclusive genex_target_exists
     collision version_conflict repository_conflict template_conflict cycle
     missing_offline bad_module bad_version bad_template missing_arguments missing_target)
-  if(case STREQUAL "streaming")
-    add_test(NAME configure_streaming
-      COMMAND "${CMAKE_COMMAND}"
-        "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/cases/streaming"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/streaming.cmake")
-  else()
-    add_test(NAME configure_${case}
-      COMMAND "${CMAKE_COMMAND}"
-        -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
-        -B "${CMAKE_CURRENT_BINARY_DIR}/cases/${case}"
-        "-DTEST_CASE=${case}")
-  endif()
+  add_test(NAME configure_${case}
+    COMMAND "${CMAKE_COMMAND}"
+      -S "${CMAKE_CURRENT_SOURCE_DIR}/fixture"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/cases/${case}"
+      "-DTEST_CASE=${case}")
   if(case STREQUAL "genex_config_exclusive")
     add_test(NAME configure_genex_config_union
       COMMAND "${CMAKE_COMMAND}" -G "Ninja Multi-Config"
