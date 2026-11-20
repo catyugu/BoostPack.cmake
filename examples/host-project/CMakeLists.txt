@@ -42,6 +42,12 @@ target_link_libraries(host_example PRIVATE
   host_dependency Boost::pfr Boost::describe Boost::mp11)
 
 if(BUILD_TESTING)
+  # BoostPack resolves relative cache paths from the build tree and relative
+  # lockfile paths from the source tree. Pass absolute paths to the fresh build.
+  get_filename_component(shared_cache "${BOOSTPACK_CACHE_DIR}" ABSOLUTE
+    BASE_DIR "${CMAKE_BINARY_DIR}")
+  get_filename_component(shared_lock "${BOOSTPACK_LOCKFILE}" ABSOLUTE
+    BASE_DIR "${CMAKE_SOURCE_DIR}")
   add_test(NAME host_example_run COMMAND host_example)
   # The first configure writes the lockfile. Replay the same source in a
   # *different* build tree, with downloads disabled and the original cache.
@@ -51,8 +57,8 @@ if(BUILD_TESTING)
       -B "${CMAKE_CURRENT_BINARY_DIR}/fresh-offline"
       "-DBUILD_TESTING:BOOL=OFF"
       "-DBOOSTPACK_OFFLINE:BOOL=ON"
-      "-DBOOSTPACK_CACHE_DIR:PATH=${BOOSTPACK_CACHE_DIR}"
-      "-DBOOSTPACK_LOCKFILE:FILEPATH=${BOOSTPACK_LOCKFILE}")
+      "-DBOOSTPACK_CACHE_DIR:PATH=${shared_cache}"
+      "-DBOOSTPACK_LOCKFILE:FILEPATH=${shared_lock}")
   set_tests_properties(host_fresh_offline_configure PROPERTIES
     DEPENDS host_example_run)
 endif()
