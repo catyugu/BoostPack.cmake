@@ -1,0 +1,17 @@
+name: Configure build parallelism
+description: Use ceil(1.5x available logical CPUs) for CMake builds.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        if [[ -n "${NUMBER_OF_PROCESSORS:-}" ]]; then
+          cores="$NUMBER_OF_PROCESSORS"
+        elif command -v nproc >/dev/null 2>&1; then
+          cores="$(nproc)"
+        else
+          cores="$(sysctl -n hw.logicalcpu)"
+        fi
+        jobs=$(( (3 * cores + 1) / 2 ))
+        echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >> "$GITHUB_ENV"
+        echo "Build parallelism: $jobs jobs on $cores logical cores"
