@@ -6,7 +6,7 @@
 - Detect upstream CMake helpers in included scripts and nested build definitions.
 - Leave legal interface dependency cycles to CMake's target graph validation.
 - Add synthetic resolver regressions and an optional compiled/assembler compatibility suite.
-- Consolidate three GitHub Actions workflows into one. Require only Linux/CMake 3.22 and Windows smoke checks for PRs, main pushes and tags; run compatibility and benchmarks manually, and cancel superseded PR runs.
+- Separate CI, manually dispatched compatibility/benchmark suites, and release publication into dedicated workflows. CI now runs `tests/`, default real-Boost integration and every `examples/` project on Linux, Windows and macOS; release tags and assets are created after the `main` CI passes.
 
 
 ## 0.2.4 - 2026-11-20
