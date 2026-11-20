@@ -83,7 +83,7 @@ foreach(module IN LISTS fake_modules)
     file(WRITE "${dir}/impl/CMakeLists.txt"
       "include(BoostInstall)\n")
     string(APPEND definition
-      "include(\\${CMAKE_CURRENT_LIST_DIR}/cmake/helpers.cmake)\n"
+      "include(${dir}/cmake/helpers.cmake)\n"
       "add_subdirectory(impl)\n")
   endif()
   file(WRITE "${dir}/CMakeLists.txt" "${definition}")
