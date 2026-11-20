@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-11-20
+
+- Add diverse executable examples across Boost 1.89.0 and 1.92.0, header-only and compiled modules, and shared-library linking on Linux, Windows and macOS.
+- Simplify the generator-expression resolver and remove redundant dependency/lockfile state without changing the public `boostpack_add()` API.
+- Add a real host-project example that combines native `FetchContent` with repeated BoostPack calls, writes a lockfile, and verifies a fresh offline configure against the same archive cache.
+- Keep CMake 3.22+, the standalone `BoostPack.cmake` distribution, the three existing user controls and the existing three-platform CI workflow. Optional benchmarks and extended compatibility checks remain manual.
+
 ## 0.2.6 - 2026-11-20
 
 - Evaluate target link generator expressions separately for each configured build configuration, avoiding spurious dependencies from mutually exclusive conditions while preserving the multi-config union.
